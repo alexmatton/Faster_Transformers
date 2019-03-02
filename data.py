@@ -1,16 +1,17 @@
 import numpy as np
-import glob
+import os
 import struct
 from torch.utils.data import Dataset
 from tensorflow.core.example import example_pb2
+from fairseq.tasks import FairseqTask
 
-class TestSummaryDataset(Dataset):
+class SummaryDataset(Dataset):
     '''
     '''
 
     def __init__(self, datapath):
         self._datapath = datapath
-        self._dataset = []  # _dataset[i][0] = full text, _dataset[i][1] = given summary
+        self._articles = []  # _articles[i][0] = full text, _articles[i][1] = given summary
         self._preprocess()
 
     def _preprocess(self):
@@ -18,7 +19,9 @@ class TestSummaryDataset(Dataset):
 
         Code taken and adapted from: https://github.com/abisee/pointer-generator/blob/master/data.py'''
 
-        filelist = glob.glob(self._datapath)  # get the list of datafiles
+        filelist = os.listdir(self._datapath)  # get the list of datafiles
+        filelist = [os.path.join(self._datapath,f) for f in filelist]
+        filelist.sort()
         assert filelist, ('Error: Empty filelist at %s' %
                           self._datapath)  # check filelist isn't empty
 
@@ -39,21 +42,29 @@ class TestSummaryDataset(Dataset):
                         '%s' % (tf_example.features.feature[key].bytes_list.value[0]))
                 examples[0] = examples[0][2:-1]
                 examples[1] = examples[1][2:-1]
-                self._dataset.append(examples)
+                self._articles.append(examples)
 
     def __getitem__(self, index):
-        return self._dataset[index]
+        return self._articles[index][0],self._articles[index][1]
 
     def __len__(self):
-        return len(self._dataset)
+        return len(self._articles)
+
+class SummarizationTask(FairseqTask):
+
+    ##TODO finish this and design in in the same way as  https://github.com/pytorch/fairseq/blob/master/fairseq/tasks/language_modeling.py
+    def __init__(self,args):
+        super().__init__(args)
+        self.source_
 
 
-if __name__ == "__main__":
-    number_article = 0
-    dataset = TestSummaryDataset(r"data/chunked/test_0*.bin")
-    
-    print(dataset[number_article])
-    print("Number of examples:", len(dataset))
-
-    for example in dataset:
-        assert len(example) == 2
+#
+# if __name__ == "__main__":
+#     number_article = 0
+#     dataset = SummaryDataset(r"data/chunked/test_0*.bin")
+#
+#     print(dataset[number_article])
+#     print("Number of examples:", len(dataset))
+#
+#     for example in dataset:
+#         assert len(example) == 2
