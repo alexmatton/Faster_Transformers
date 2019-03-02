@@ -4,26 +4,85 @@ import struct
 from torch.utils.data import Dataset
 from tensorflow.core.example import example_pb2
 from fairseq.tasks import FairseqTask
+from fairseq.data import data_utils
+import torch
+
+
+def collate(
+        samples, pad_idx, eos_idx, left_pad_source=True, left_pad_target=False,
+        input_feeding=True,
+):
+    # taken from https://github.com/pytorch/fairseq/blob/master/fairseq/data/language_pair_dataset.py
+    if len(samples) == 0:
+        return {}
+
+    def merge(key, left_pad, move_eos_to_beginning=False):
+        return data_utils.collate_tokens(
+            [s[key] for s in samples],
+            pad_idx, eos_idx, left_pad, move_eos_to_beginning,
+        )
+
+    id = torch.LongTensor([s['id'] for s in samples])
+    src_tokens = merge('article', left_pad=left_pad_source)
+    # sort by descending source length
+    src_lengths = torch.LongTensor([s['article'].numel() for s in samples])
+    src_lengths, sort_order = src_lengths.sort(descending=True)
+    id = id.index_select(0, sort_order)
+    src_tokens = src_tokens.index_select(0, sort_order)
+
+    prev_output_tokens = None
+    target = merge('summary', left_pad=left_pad_target)
+    target = target.index_select(0, sort_order)
+    ntokens = sum(len(s['summary']) for s in samples)
+
+    if input_feeding:
+        # we create a shifted version of targets for feeding the
+        # previous output token(s) into the next decoder step
+        prev_output_tokens = merge(
+            'summary',
+            left_pad=left_pad_target,
+            move_eos_to_beginning=True,
+        )
+        prev_output_tokens = prev_output_tokens.index_select(0, sort_order)
+
+    batch = {
+        'id': id,
+        'nsentences': len(samples),
+        'ntokens': ntokens,
+        'net_input': {
+            'src_tokens': src_tokens,
+            'src_lengths': src_lengths,
+        },
+        'target': target,
+    }
+    if prev_output_tokens is not None:
+        batch['net_input']['prev_output_tokens'] = prev_output_tokens
+    return batch
 
 class SummaryDataset(Dataset):
     '''
     '''
 
-    def __init__(self, datapath):
-        self._datapath = datapath
-        self._articles = []  # _articles[i][0] = full text, _articles[i][1] = given summary
-        self._preprocess()
+    def __init__(self, datapath, dictionary):
+        self.datapath = datapath
+        self.dictionary = dictionary
 
-    def _preprocess(self):
+        self.articles = []
+        self.summaries = []
+        self.articles_len = []
+        self.summaries_len = []
+
+        self.preprocess()
+
+    def preprocess(self):
         ''' Import the dataset from the binary files.
+        Code taken and adapted from: https://github.com/abisee/pointer-generator/blob/master/data.py '''
 
-        Code taken and adapted from: https://github.com/abisee/pointer-generator/blob/master/data.py'''
-
-        filelist = os.listdir(self._datapath)  # get the list of datafiles
-        filelist = [os.path.join(self._datapath,f) for f in filelist]
+        filelist = os.listdir(self.datapath)  # get the list of datafiles
+        filelist = [os.path.join(self.datapath, f) for f in filelist]
         filelist.sort()
         assert filelist, ('Error: Empty filelist at %s' %
-                          self._datapath)  # check filelist isn't empty
+                          self.datapath)  # check filelist isn't empty
 
         for f in filelist:
             reader = open(f, 'rb')
@@ -42,29 +101,48 @@ class SummaryDataset(Dataset):
                         '%s' % (tf_example.features.feature[key].bytes_list.value[0]))
                 examples[0] = examples[0][2:-1]
                 examples[1] = examples[1][2:-1]
-                self._articles.append(examples)
+                self.articles.append(examples[0])
+                self.summaries.append(examples[1])
+        self.articles_len = np.array([len(a) for a in self.articles], dtype='long')
+        self.summaries_len = np.array([len(s) for s in self.summaries], dtype='long')
+
+    def tokenize(self, text):
+        return torch.LongTensor([self.dictionary.index(sym) for sym in text] + [self.dictionary.eos_index])
+
+    def ordered_indices(self, shuffle=False):
+        """Return an ordered list of indices. Batches will be constructed based
+                on this order."""
+        if shuffle:
+            indices = np.random.permutation(len(self))
+        else:
+            indices = np.arange(len(self))
+
+        indices = indices[np.argsort(self.summaries_len[indices], kind='mergesort')]
+        return indices[np.argsort(self.articles_len[indices], kind='mergesort')]
 
     def __getitem__(self, index):
-        return self._articles[index][0],self._articles[index][1]
+        article, summary = self.articles[index], self.summaries[index]
+        article, summary = self.tokenize(article), self.tokenize(summary)
+        item = {'id': index, 'article': article, 'summary': summary}
+        return item
 
     def __len__(self):
-        return len(self._articles)
+        return len(self.articles)
+
+
+##TODO maybe integrate totally into FairSeq for later use
 
 class SummarizationTask(FairseqTask):
 
     ##TODO finish this and design in in the same way as  https://github.com/pytorch/fairseq/blob/master/fairseq/tasks/language_modeling.py
-    def __init__(self,args):
+    def __init__(self, args, dictionary):
         super().__init__(args)
-        self.source_
+        self.dictionary = dictionary
 
+    @property
+    def source_dictionary(self):
+        return self.dictionary
 
-#
-# if __name__ == "__main__":
-#     number_article = 0
-#     dataset = SummaryDataset(r"data/chunked/test_0*.bin")
-#
-#     print(dataset[number_article])
-#     print("Number of examples:", len(dataset))
-#
-#     for example in dataset:
-#         assert len(example) == 2
+    @property
+    def target_dictionary(self):
+        return self.dictionary
