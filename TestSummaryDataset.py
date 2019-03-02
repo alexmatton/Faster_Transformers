@@ -4,7 +4,6 @@ import struct
 from torch.utils.data import Dataset
 from tensorflow.core.example import example_pb2
 
-
 class TestSummaryDataset(Dataset):
     '''
     '''
