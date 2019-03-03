@@ -4,8 +4,9 @@ import struct
 from torch.utils.data import Dataset
 from tensorflow.core.example import example_pb2
 from fairseq.tasks import FairseqTask
-from fairseq.data import data_utils
+from fairseq.data import data_utils, Dictionary
 import torch
+from fairseq.models.transformer import base_architecture
 
 
 def collate(
@@ -59,13 +60,17 @@ def collate(
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
     return batch
 
+
 class SummaryDataset(Dataset):
     '''
     '''
 
-    def __init__(self, datapath, dictionary):
+    def __init__(self, datapath, dictionary, max_article_size=10000, max_summary_size=10000):
         self.datapath = datapath
         self.dictionary = dictionary
+
+        self.max_article_size = max_article_size
+        self.max_summary_size = max_summary_size
 
         self.articles = []
         self.summaries = []
@@ -99,8 +104,8 @@ class SummaryDataset(Dataset):
                 for key in tf_example.features.feature:
                     examples.append(
                         '%s' % (tf_example.features.feature[key].bytes_list.value[0]))
-                examples[0] = examples[0][2:-1]
-                examples[1] = examples[1][2:-1]
+                examples[0] = examples[0][2:-1][:self.max_article_size]
+                examples[1] = examples[1][2:-1][:self.max_summary_size]
                 self.articles.append(examples[0])
                 self.summaries.append(examples[1])
         self.articles_len = np.array([len(a) for a in self.articles], dtype='long')
@@ -146,3 +151,19 @@ class SummarizationTask(FairseqTask):
     @property
     def target_dictionary(self):
         return self.dictionary
+
+
+def transformer_small(args):
+    args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 512)
+    args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 1024)
+    args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 4)
+    args.encoder_layers = getattr(args, 'encoder_layers', 6)
+    args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 512)
+    args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 1024)
+    args.decoder_attention_heads = getattr(args, 'decoder_attention_heads', 4)
+    args.decoder_layers = getattr(args, 'decoder_layers', 6)
+    base_architecture(args)
+
+
+if __name__ == "__main__":
+    dataset = SummaryDataset(datapath='datasets/cnn_debug', dictionary=Dictionary.load('datasets/vocab'))
