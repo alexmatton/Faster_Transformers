@@ -29,7 +29,7 @@ def train_epoch(dataloader, model, criterion, optimizer, device, epoch, pad_inde
 
         output = model(src_tokens, src_lengths, prev_output_tokens)
         preds = torch.argmax(output[0], dim=-1)
-        #TODO @alex fix it
+        #TODO continue here
         total_correct += (preds == output[0]) * (output[0] != pad_index).sum()
         loss = criterion(output[0].view(-1, output[0].size(-1)), target.view(-1))
         total_loss += loss.item()
