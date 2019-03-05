@@ -2,7 +2,8 @@
 data/
 .ipynb_checkpoints/
 .vscode/
-
+datasets/
+__pycache__/
 
 # Compiled source #
 ###################

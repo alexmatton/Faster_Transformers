@@ -104,8 +104,11 @@ class SummaryDataset(Dataset):
                 for key in tf_example.features.feature:
                     examples.append(
                         '%s' % (tf_example.features.feature[key].bytes_list.value[0]))
-                examples[0] = examples[0][2:-1][:self.max_article_size]
-                examples[1] = examples[1][2:-1][:self.max_summary_size]
+
+                examples[0] = examples[0][2:-1].split()[:self.max_article_size]
+                examples[1] = [w for w in examples[1][2:-1].split() 
+                                if (w!=self.dictionary.eos_word and w!='<s>')]
+                examples[1] = examples[1][:self.max_summary_size]
                 self.articles.append(examples[0])
                 self.summaries.append(examples[1])
         self.articles_len = np.array([len(a) for a in self.articles], dtype='long')
@@ -113,6 +116,7 @@ class SummaryDataset(Dataset):
 
     def tokenize(self, text):
         return torch.LongTensor([self.dictionary.index(sym) for sym in text] + [self.dictionary.eos_index])
+
 
     def ordered_indices(self, shuffle=False):
         """Return an ordered list of indices. Batches will be constructed based
@@ -166,4 +170,5 @@ def transformer_small(args):
 
 
 if __name__ == "__main__":
-    dataset = SummaryDataset(datapath='datasets/cnn_debug', dictionary=Dictionary.load('datasets/vocab'))
+    dataset = SummaryDataset(datapath='datasets/cnn_debug/train', dictionary=Dictionary.load('datasets/vocab'))
+    print(dataset[3])
