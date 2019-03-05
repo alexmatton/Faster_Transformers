@@ -29,8 +29,11 @@ def train_epoch(dataloader, model, criterion, optimizer, device, epoch, pad_inde
 
         output = model(src_tokens, src_lengths, prev_output_tokens)
         preds = torch.argmax(output[0], dim=-1)
-        #TODO continue here
-        total_correct += (preds == output[0]) * (output[0] != pad_index).sum()
+
+        # TODO continue here
+        # total_correct += ((preds == target) * (target != pad_index)).sum()
+        total_correct += ((preds == target)).sum().item()
+
         loss = criterion(output[0].view(-1, output[0].size(-1)), target.view(-1))
         total_loss += loss.item()
         loss = loss / batch['ntokens']
@@ -49,8 +52,8 @@ def train_epoch(dataloader, model, criterion, optimizer, device, epoch, pad_inde
                                                                                         len(dataloader),
                                                                                         loss_to_log,
                                                                                         speed_to_log))
-    print("EPOCH {} | train loss {} | train acc {:.3f}".format(epoch, total_loss / total_tokens,
-                                                               total_correct / total_tokens))
+    print("EPOCH {} | train loss {:.3f} | train acc {:.7f}".format(epoch, total_loss / total_tokens,
+                                                                   total_correct / total_tokens))
 
 
 def main():
@@ -84,9 +87,11 @@ def main():
     model = TransformerModel.build_model(args, summarization_task).to(args.device)
 
     criterion = nn.CrossEntropyLoss(reduction='sum')
-
-    optimizer = torch.optim.SGD(params=model.parameters(), lr=args.lr, momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    if args.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(params=model.parameters(), lr=args.lr, momentum=args.momentum,
+                                    weight_decay=args.weight_decay)
+    else:
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     for epoch in range(args.n_epochs):
         train_epoch(train_dataloader, model, criterion, optimizer, args.device, epoch=epoch,
                     pad_index=dictionary.pad_index)
@@ -101,6 +106,8 @@ parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--n_epochs", type=int, default=10)
 parser.add_argument("--lr", type=float, default=1e-3)
+parser.add_argument("--optimizer", type=str, choices=['sgd', 'adam'], default='sgd')
+
 parser.add_argument("--momentum", type=float, default=1e-5)
 parser.add_argument("--weight_decay", type=float, default=1e-5)
 parser.add_argument("--device", type=str, default='cuda')
