@@ -42,7 +42,7 @@ def main():
         pass
 
     generator = SequenceGenerator([model], dictionary, beam_size=args.beam_size, 
-                                maxlen=args.max_target_position)
+                                maxlen=args.max_target_positions)
 
     avg_rouge_score = defaultdict(float)
 
@@ -64,6 +64,13 @@ def main():
         hypotheses = [remove_special_tokens(hypo, dictionary) for hypo in hypotheses]
         hypotheses = [dictionary.string(hyp) for hyp in hypotheses]
 
+        if args.verbose:
+            print("\nComparison references/hypotheses:")
+            for ref, hypo in zip(references, hypotheses):
+                print(ref)
+                print(hypo)
+                print()
+
         avg_rouge_score_batch = compute_rouge.compute_score(references, hypotheses)
         print("rouge for this batch:", avg_rouge_score_batch)
 
@@ -84,6 +91,7 @@ parser.add_argument("--model_path", type=str, default=None)
 parser.add_argument("--debug", type=int, default=1)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=32)
+parser.add_argument("--verbose", action='store_true')
 # parser.add_argument("--n_epochs", type=int, default=10)
 # parser.add_argument("--lr", type=float, default=1e-3)
 # parser.add_argument("--momentum", type=float, default=1e-5)
