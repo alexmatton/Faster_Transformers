@@ -39,7 +39,7 @@ def main():
 
     #TODO: add load model
     if args.model_path:
-        pass
+        model.load_state_dict(args.model_path)
 
     generator = SequenceGenerator([model], dictionary, beam_size=args.beam_size, 
                                 maxlen=args.max_target_positions)

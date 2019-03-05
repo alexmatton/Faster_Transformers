@@ -16,7 +16,7 @@ def compute_score(hypotheses, references):
     evaluator = rouge.Rouge(metrics=['rouge-n', 'rouge-l'],
                             max_n=2,
                             limit_length=True,
-                            length_limit=100,
+                            length_limit=200,
                             length_limit_type='words',
                             apply_avg=False,
                             apply_best=True,

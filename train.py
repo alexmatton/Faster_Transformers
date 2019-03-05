@@ -10,7 +10,7 @@ from fairseq.models.transformer import TransformerModel
 import time
 
 
-def train_epoch(dataloader, model, criterion, optimizer, device, epoch, pad_index, log_interval=100):
+def train_epoch(dataloader, model, criterion, optimizer, device, pad_index, savedir, epoch, log_interval=100):
     print("-" * 10 + "epoch " + str(epoch) + "-" * 10)
     total_loss = 0.0
     total_tokens = 0.0
@@ -52,6 +52,8 @@ def train_epoch(dataloader, model, criterion, optimizer, device, epoch, pad_inde
     print("EPOCH {} | train loss {} | train acc {:.3f}".format(epoch, total_loss / total_tokens,
                                                                total_correct / total_tokens))
 
+    torch.save(model.state_dict(), os.path.join(savedir, 'model_transformer.pt'))
+
 
 def main():
     # TODO max article size
@@ -65,11 +67,6 @@ def main():
     train_dataset = SummaryDataset(os.path.join(args.data_path, 'train'), dictionary=dictionary,
                                    max_article_size=args.max_source_positions,
                                    max_summary_size=args.max_target_positions)
-    val_dataset = SummaryDataset(os.path.join(args.data_path, 'val'), dictionary=dictionary,
-                                 max_article_size=args.max_source_positions, max_summary_size=args.max_target_positions)
-    test_dataset = SummaryDataset(os.path.join(args.data_path, 'test'), dictionary=dictionary,
-                                  max_article_size=args.max_source_positions,
-                                  max_summary_size=args.max_target_positions)
 
     # TODO maybe change the sampler to group texts of similar lengths
 
@@ -88,14 +85,14 @@ def main():
     optimizer = torch.optim.SGD(params=model.parameters(), lr=args.lr, momentum=args.momentum,
                                 weight_decay=args.weight_decay)
     for epoch in range(args.n_epochs):
-        train_epoch(train_dataloader, model, criterion, optimizer, args.device, epoch=epoch,
-                    pad_index=dictionary.pad_index)
-
+        train_epoch(train_dataloader, model, criterion, optimizer, args.device, pad_index,
+                         args.savedir, epoch=epoch)
 
 parser = argparse.ArgumentParser()
 
 parser.add_argument("--data_path", type=str, default="datasets/cnn_debug")
 parser.add_argument("--vocab_path", type=str, default="datasets/vocab")
+parser.add_argument("--savedir", type=str, default="checkpoints")
 parser.add_argument("--debug", type=int, default=0)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=32)
