@@ -65,12 +65,13 @@ class SummaryDataset(Dataset):
     '''
     '''
 
-    def __init__(self, datapath, dictionary, max_article_size=10000, max_summary_size=10000):
+    def __init__(self, datapath, dictionary, max_article_size=10000, max_summary_size=10000, max_elements=None):
         self.datapath = datapath
         self.dictionary = dictionary
 
         self.max_article_size = max_article_size
         self.max_summary_size = max_summary_size
+        self.max_elements= max_elements
 
         self.articles = []
         self.summaries = []
@@ -106,17 +107,22 @@ class SummaryDataset(Dataset):
                         '%s' % (tf_example.features.feature[key].bytes_list.value[0]))
 
                 examples[0] = examples[0][2:-1].split()[:self.max_article_size]
-                examples[1] = [w for w in examples[1][2:-1].split() 
-                                if (w!=self.dictionary.eos_word and w!='<s>')]
+                examples[1] = [w for w in examples[1][2:-1].split()
+                               if (w != self.dictionary.eos_word and w != '<s>')]
                 examples[1] = examples[1][:self.max_summary_size]
                 self.articles.append(examples[0])
                 self.summaries.append(examples[1])
         self.articles_len = np.array([len(a) for a in self.articles], dtype='long')
         self.summaries_len = np.array([len(s) for s in self.summaries], dtype='long')
 
+        if self.max_elements is not None:
+            self.articles_len = self.articles_len[:self.max_elements]
+            self.summaries_len = self.summaries_len[:self.max_elements]
+            self.articles = self.articles[:self.max_elements]
+            self.summaries = self.summaries[:self.max_elements]
+
     def tokenize(self, text):
         return torch.LongTensor([self.dictionary.index(sym) for sym in text] + [self.dictionary.eos_index])
-
 
     def ordered_indices(self, shuffle=False):
         """Return an ordered list of indices. Batches will be constructed based
