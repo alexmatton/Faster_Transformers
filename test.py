@@ -9,9 +9,8 @@ from models import transformer_small
 from torch.utils.data import DataLoader, SequentialSampler
 
 from fairseq.data import Dictionary
-from fairseq.models.transformer import TransformerModel
-from fairseq import search
-import time
+from fairseq.models import transformer
+from fairseq.models import lstm
 import compute_rouge
 
 from fairseq.sequence_generator import SequenceGenerator
@@ -27,7 +26,8 @@ def main():
 
     test_dataset = SummaryDataset(os.path.join(args.data_path, 'test'), dictionary=dictionary,
                                   max_article_size=args.max_source_positions,
-                                  max_summary_size=args.max_target_positions)
+                                  max_summary_size=args.max_target_positions,
+                                  max_elements=10 if args.debug else None)
     test_sampler = SequentialSampler(test_dataset)
     test_dataloader = DataLoader(dataset=test_dataset, batch_size=args.batch_size, sampler=test_sampler, \
                                   num_workers=args.num_workers,
@@ -90,10 +90,10 @@ def remove_special_tokens(token_tensor, dictionary):
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--data_path", type=str, default="datasets/cnn_debug")
+parser.add_argument("--data_path", type=str, default="datasets/cnn_full")
 parser.add_argument("--vocab_path", type=str, default="datasets/vocab")
 parser.add_argument("--model_path", type=str, default=None)
-parser.add_argument("--debug", type=int, default=1)
+parser.add_argument("--debug", type=int, default=0)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--verbose", action='store_true')
