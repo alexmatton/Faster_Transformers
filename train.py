@@ -46,7 +46,7 @@ def validate(dataloader, model, criterion, device, pad_index, epoch):
 
 def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_index, save_dir, n_epochs,
           log_interval=100,
-          save=True):
+          save=True, debug = False):
     best_val_loss = np.inf
 
     for epoch in range(n_epochs):
@@ -61,7 +61,12 @@ def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_in
         last_logged_loss = 0.0
         last_log_time = time.time()
 
+        print("Learning rate:")
+        for param_group in optimizer.param_groups:
+            print(param_group['lr'])
+
         for batch_idx, batch in enumerate(dataloaders['train']):
+
             src_tokens = batch['net_input']['src_tokens'].to(device)
             src_lengths = batch['net_input']['src_lengths'].to(device)
             prev_output_tokens = batch['net_input']['prev_output_tokens'].to(device)
@@ -91,10 +96,12 @@ def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_in
                                                                                             loss_to_log,
                                                                                             speed_to_log))
         val_loss = validate(dataloaders['val'], model, criterion, device, pad_index, epoch)
+
         if (val_loss < best_val_loss) and save:
             print("saved model, epoch {}, val loss {:.3f}".format(epoch, val_loss))
             best_val_loss = val_loss
-            torch.save(model.state_dict(), os.path.join(save_dir, 'model.pt'))
+            if not debug or epoch % 100 == 0:
+                torch.save(model.state_dict(), os.path.join(save_dir, 'model.pt'))
 
         print("EPOCH {} | train loss {:.3f} | train acc {:.7f}".format(epoch, total_loss / total_tokens,
                                                                        total_correct / total_tokens))
@@ -148,8 +155,13 @@ def main():
     if not os.path.isdir(os.path.join(args.save_dir, args.flag)):
         os.makedirs(os.path.join(args.save_dir, args.flag))
 
+    print("Launching training with: \noptimizer: {}\n lr: {}\n \
+exponential_decay: {}\n momentum: {}\n weight_decay: {}\n batch_size: {}\n"
+            .format(args.optimizer, args.lr, args.exponential_decay, 
+            args.momentum, args.weight_decay, args.batch_size))
+
     train(dataloaders, model, criterion, optimizer, lr_scheduler, args.device, dictionary.pad_index,
-          save_dir=os.path.join(args.save_dir, args.flag), n_epochs=args.n_epochs, save=args.save)
+          save_dir=os.path.join(args.save_dir, args.flag), n_epochs=args.n_epochs, save=args.save, debug = args.debug)
 
 
 parser = argparse.ArgumentParser()
@@ -158,7 +170,7 @@ parser.add_argument("--data_path", type=str, default="datasets/cnn_full")
 parser.add_argument("--vocab_path", type=str, default="datasets/vocab")
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 parser.add_argument("--save", type=int, default=0)
-parser.add_argument("--flag", type=str, default="")
+parser.add_argument("--flag", type=str, default="") #for name of saved model, if "" then takes into account the date
 parser.add_argument("--debug", type=int, default=0)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=16)
