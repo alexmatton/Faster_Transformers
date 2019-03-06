@@ -3,16 +3,19 @@ import torch
 import torch.nn as nn
 import os
 import argparse
-from data import SummaryDataset, SummarizationTask, collate, transformer_small
+from data import SummaryDataset, SummarizationTask, collate
+from models import transformer_small
 from torch.utils.data import DataLoader, RandomSampler
 from fairseq.data import Dictionary
-from fairseq.models.transformer import TransformerModel
+from fairseq.models import transformer
+from fairseq.models import lstm
 import time
 import datetime
 
 
 def train_epoch(dataloader, model, criterion, optimizer, device, pad_index, save_dir, epoch, log_interval=100,
-                save=True,dictionary=None):
+                save=True, dictionary=None):
+    model.train()
     print("-" * 10 + "epoch " + str(epoch) + "-" * 10)
     total_loss = 0.0
     total_tokens = 0.0
@@ -32,7 +35,9 @@ def train_epoch(dataloader, model, criterion, optimizer, device, pad_index, save
 
         output = model(src_tokens, src_lengths, prev_output_tokens)
         preds = torch.argmax(output[0], dim=-1)
-
+        #
+        # import pdb;
+        # pdb.set_trace()
 
         # TODO continue here
         total_correct += ((preds == target).float() * target_mask).sum().item()
@@ -40,13 +45,13 @@ def train_epoch(dataloader, model, criterion, optimizer, device, pad_index, save
 
         loss = (criterion(output[0].view(-1, output[0].size(-1)), target.view(-1)) * target_mask.view(-1)).sum()
         total_loss += loss.item()
-        loss = loss / batch['ntokens']
+        loss = loss / target_mask.sum()
         loss.backward()
         optimizer.step()
         # TODO maybe lr_scheduler.step()
-        if epoch >200:
-            import pdb;
-            pdb.set_trace()
+        # if epoch >200:
+        #     import pdb;
+        #     pdb.set_trace()
 
         if (batch_idx % log_interval == 0) and (batch_idx > 0):
             loss_to_log = (total_loss - last_logged_loss) / (total_tokens - last_logged_tokens)
@@ -64,13 +69,10 @@ def train_epoch(dataloader, model, criterion, optimizer, device, pad_index, save
     print("EPOCH {} | train loss {:.3f} | train acc {:.7f}".format(epoch, total_loss / total_tokens,
                                                                    total_correct / total_tokens))
 
-    if save:
-        torch.save(model.state_dict(), os.path.join(save_dir, 'model_transformer_epoch_{}.pt'.format(epoch)))
 
 
 def main():
-    # TODO max article size
-    # data setup
+    # TODO lr scheduler
 
     args = parser.parse_args()
     np.random.seed(args.seed)
@@ -90,9 +92,13 @@ def main():
                                                                      dictionary.eos_index))
 
     summarization_task = SummarizationTask(args, dictionary)
-    transformer_small(args)
-    model = TransformerModel.build_model(args, summarization_task).to(args.device)
-
+    if args.model == 'transformer':
+        transformer_small(args)
+        model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
+    if args.model == 'lstm':
+        lstm.base_architecture(args)
+        args.criterion = None
+        model = lstm.LSTMModel.build_model(args, summarization_task).to(args.device)
     criterion = nn.CrossEntropyLoss(reduction='none')
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(params=model.parameters(), lr=args.lr, momentum=args.momentum,
@@ -101,12 +107,14 @@ def main():
         optimizer = torch.optim.Adam(params=model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
     if args.flag == "":
-        args.flag = 'train_transformer_{date:%Y-%m-%d %H:%M:%S}'.format(date=datetime.datetime.now())
+        args.flag = 'train_transformer_{date:%Y-%m-%d_%H:%M:%S}'.format(date=datetime.datetime.now())
     if not os.path.isdir(os.path.join(args.save_dir, args.flag)):
         os.makedirs(os.path.join(args.save_dir, args.flag))
     for epoch in range(args.n_epochs):
         train_epoch(train_dataloader, model, criterion, optimizer, args.device, dictionary.pad_index,
-                    save_dir=os.path.join(args.save_dir, args.flag), epoch=epoch, save=args.save,dictionary=dictionary)
+                    save_dir=os.path.join(args.save_dir, args.flag), epoch=epoch, save=args.save, dictionary=dictionary)
+
+    torch.save(model.state_dict(), os.path.join(args.save_dir, args.flag,'transformer.pt'))
 
 
 parser = argparse.ArgumentParser()
@@ -119,16 +127,17 @@ parser.add_argument("--flag", type=str, default="")
 parser.add_argument("--debug", type=int, default=0)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=16)
-parser.add_argument("--n_epochs", type=int, default=10)
+parser.add_argument("--n_epochs", type=int, default=30)
 parser.add_argument("--lr", type=float, default=1e-3)
 parser.add_argument("--optimizer", type=str, choices=['sgd', 'adam'], default='sgd')
 
-parser.add_argument("--momentum", type=float, default=1e-5)
-parser.add_argument("--weight_decay", type=float, default=1e-5)
+parser.add_argument("--momentum", type=float, default=0.0)
+parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
-parser.add_argument("--max_source_positions", type=int, default=400)
-parser.add_argument("--max_target_positions", type=int, default=100)
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm'], default='transformer')
+parser.add_argument("--max_source_positions", type=int, default=400)  # TODO remove
+parser.add_argument("--max_target_positions", type=int, default=100)  # TODO remove
 
 parser.add_argument("--seed", type=int, default=1111)
 

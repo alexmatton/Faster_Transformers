@@ -6,7 +6,6 @@ from tensorflow.core.example import example_pb2
 from fairseq.tasks import FairseqTask
 from fairseq.data import data_utils, Dictionary
 import torch
-from fairseq.models.transformer import base_architecture
 
 
 def collate(
@@ -153,7 +152,6 @@ class SummarizationTask(FairseqTask):
     def __init__(self, args, dictionary):
         super().__init__(args)
         self.dictionary = dictionary
-
     @property
     def source_dictionary(self):
         return self.dictionary
@@ -163,16 +161,6 @@ class SummarizationTask(FairseqTask):
         return self.dictionary
 
 
-def transformer_small(args):
-    args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 512)
-    args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 1024)
-    args.encoder_attention_heads = getattr(args, 'encoder_attention_heads', 4)
-    args.encoder_layers = getattr(args, 'encoder_layers', 6)
-    args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 512)
-    args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 1024)
-    args.decoder_attention_heads = getattr(args, 'decoder_attention_heads', 4)
-    args.decoder_layers = getattr(args, 'decoder_layers', 6)
-    base_architecture(args)
 
 
 if __name__ == "__main__":

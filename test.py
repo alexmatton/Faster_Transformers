@@ -4,7 +4,8 @@ import torch.nn as nn
 import os
 import argparse
 from collections import defaultdict
-from data import SummaryDataset, SummarizationTask, collate, transformer_small
+from data import SummaryDataset, SummarizationTask, collate
+from models import transformer_small
 from torch.utils.data import DataLoader, SequentialSampler
 
 from fairseq.data import Dictionary
@@ -34,12 +35,16 @@ def main():
                                                                      dictionary.eos_index))
 
     summarization_task = SummarizationTask(args, dictionary)
-    transformer_small(args)
-    model = TransformerModel.build_model(args, summarization_task).to(args.device)
+    if args.model == 'transformer':
+        transformer_small(args)
+        model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
+    if args.model == 'lstm':
+        lstm.base_architecture(args)
+        args.criterion = None
+        model = lstm.LSTMModel.build_model(args, summarization_task).to(args.device)
 
-    #TODO: add load model
     if args.model_path:
-        model.load_state_dict(args.model_path)
+        model.load_state_dict(torch.load(args.model_path))
 
     generator = SequenceGenerator([model], dictionary, beam_size=args.beam_size, 
                                 maxlen=args.max_target_positions)
@@ -100,7 +105,8 @@ parser.add_argument("--device", type=str, default='cuda')
 # parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
-parser.add_argument("--beam_size", type=int, default=5)
+parser.add_argument("--beam_size", type=int, default=4)
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm'], default='transformer')
 parser.add_argument("--seed", type=int, default=1111)
 
 

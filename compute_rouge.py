@@ -1,4 +1,4 @@
-import rouge  # from pip install py-rouge
+import rouge  # pip install py-rouge
 from collections import defaultdict
 
 
