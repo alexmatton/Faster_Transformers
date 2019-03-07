@@ -4,11 +4,12 @@ import torch.nn as nn
 import os
 import argparse
 from data import SummaryDataset, SummarizationTask, collate
-from models import transformer_small
+from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, RandomSampler
 from fairseq.data import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
+from fairseq.models import lightconv
 import time
 import datetime
 import tensorboardX
@@ -97,11 +98,13 @@ def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_in
                                                                                             speed_to_log))
         val_loss = validate(dataloaders['val'], model, criterion, device, pad_index, epoch)
 
-        if (val_loss < best_val_loss) and save:
+        if save and debug and epoch % 200 == 0 and epoch > 0:
+            torch.save(model.state_dict(), os.path.join(save_dir, 'debug_model.pt'))
+
+        if (val_loss < best_val_loss) and save and not debug:
             print("saved model, epoch {}, val loss {:.3f}".format(epoch, val_loss))
             best_val_loss = val_loss
-            if not debug or epoch % 100 == 0:
-                torch.save(model.state_dict(), os.path.join(save_dir, 'model.pt'))
+            torch.save(model.state_dict(), os.path.join(save_dir, 'model.pt'))
 
         print("EPOCH {} | train loss {:.3f} | train acc {:.7f}".format(epoch, total_loss / total_tokens,
                                                                        total_correct / total_tokens))
@@ -138,10 +141,17 @@ def main():
     if args.model == 'transformer':
         transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
-    if args.model == 'lstm':
+    elif args.model == 'lstm':
         lstm.base_architecture(args)
         args.criterion = None
         model = lstm.LSTMModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'lightconv':
+        args.encoder_conv_type = 'lightweight'
+        args.decoder_conv_type = 'lightweight'
+        args.weight_softmax = True
+        light_conv_small(args)
+        model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
+
     criterion = nn.CrossEntropyLoss(reduction='none')
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(params=model.parameters(), lr=args.lr, momentum=args.momentum,
@@ -183,7 +193,7 @@ parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm'], default='transformer')
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv'], default='transformer')
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 

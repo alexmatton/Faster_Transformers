@@ -25,7 +25,8 @@ cp ${INPUT_DIR}/train_000.bin ${DEBUG_DIR}/train/
 #cp ${INPUT_DIR}/train_003.bin ${DEBUG_DIR}/train/
 #cp ${INPUT_DIR}/train_004.bin ${DEBUG_DIR}/train/
 
-cp ${INPUT_DIR}/val_000.bin ${DEBUG_DIR}/val/
+cp ${INPUT_DIR}/train_000.bin ${DEBUG_DIR}/val/val_000.bin
 
-cp ${INPUT_DIR}/test_000.bin ${DEBUG_DIR}/test/
+
+cp ${INPUT_DIR}/train_000.bin ${DEBUG_DIR}/test/test_000.bin
 

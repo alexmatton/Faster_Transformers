@@ -5,12 +5,13 @@ import os
 import argparse
 from collections import defaultdict
 from data import SummaryDataset, SummarizationTask, collate
-from models import transformer_small
+from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, SequentialSampler
 
 from fairseq.data import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
+from fairseq.models import lightconv
 import compute_rouge
 
 from fairseq.sequence_generator import SequenceGenerator
@@ -38,10 +39,16 @@ def main():
     if args.model == 'transformer':
         transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
-    if args.model == 'lstm':
+    elif args.model == 'lstm':
         lstm.base_architecture(args)
         args.criterion = None
         model = lstm.LSTMModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'lightconv':
+        args.encoder_conv_type = 'lightweight'
+        args.decoder_conv_type = 'lightweight'
+        args.weight_softmax = True
+        light_conv_small(args)
+        model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
 
     if args.model_path:
         model.load_state_dict(torch.load(args.model_path))
@@ -106,7 +113,7 @@ parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 parser.add_argument("--beam_size", type=int, default=4)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm'], default='transformer')
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv'], default='transformer')
 parser.add_argument("--seed", type=int, default=1111)
 
 
