@@ -19,21 +19,19 @@ from fairseq.modules import (
     SinusoidalPositionalEmbedding
 )
 
-from . import (
-    FairseqIncrementalDecoder, FairseqEncoder, FairseqLanguageModel, FairseqModel, register_model,
-    register_model_architecture,
-)
+from fairseq.models import FairseqIncrementalDecoder, FairseqEncoder, FairseqLanguageModel, \
+FairseqModel, register_model, register_model_architecture
 
 
-@register_model('transformer')
-class TransformerModel(FairseqModel):
+@register_model('localtransformer')
+class LocalTransformerModel(FairseqModel):
     """
     Transformer model from `"Attention Is All You Need" (Vaswani, et al, 2017)
     <https://arxiv.org/abs/1706.03762>`_.
 
     Args:
-        encoder (TransformerEncoder): the encoder
-        decoder (TransformerDecoder): the decoder
+        encoder (LocalTransformerEncoder): the encoder
+        decoder (LocalTransformerDecoder): the decoder
 
     The Transformer model provides the following named architectures and
     command-line arguments:
@@ -144,12 +142,12 @@ class TransformerModel(FairseqModel):
                 tgt_dict, args.decoder_embed_dim, args.decoder_embed_path
             )
 
-        encoder = TransformerEncoder(args, src_dict, encoder_embed_tokens)
-        decoder = TransformerDecoder(args, tgt_dict, decoder_embed_tokens)
-        return TransformerModel(encoder, decoder)
+        encoder = LocalTransformerEncoder(args, src_dict, encoder_embed_tokens)
+        decoder = LocalTransformerDecoder(args, tgt_dict, decoder_embed_tokens)
+        return LocalTransformerModel(encoder, decoder)
 
 
-@register_model('transformer_lm')
+@register_model('localtransformer_lm')
 class TransformerLanguageModel(FairseqLanguageModel):
     def __init__(self, decoder):
         super().__init__(decoder)
@@ -250,16 +248,16 @@ class TransformerLanguageModel(FairseqLanguageModel):
                 args.adaptive_softmax_cutoff, args.adaptive_input_cutoff)
             assert args.decoder_input_dim == args.decoder_output_dim
 
-        decoder = TransformerDecoder(
+        decoder = LocalTransformerDecoder(
             args, task.output_dictionary, embed_tokens, no_encoder_attn=True, final_norm=False,
         )
         return TransformerLanguageModel(decoder)
 
 
-class TransformerEncoder(FairseqEncoder):
+class LocalTransformerEncoder(FairseqEncoder):
     """
     Transformer encoder consisting of *args.encoder_layers* layers. Each layer
-    is a :class:`TransformerEncoderLayer`.
+    is a :class:`LocalTransformerEncoderLayer`.
 
     Args:
         args (argparse.Namespace): parsed command-line arguments
@@ -274,20 +272,21 @@ class TransformerEncoder(FairseqEncoder):
         self.dropout = args.dropout
 
         embed_dim = embed_tokens.embedding_dim
+        self.embed_dim = embed_dim
         self.padding_idx = embed_tokens.padding_idx
         self.max_source_positions = args.max_source_positions
 
         self.embed_tokens = embed_tokens
         self.embed_scale = math.sqrt(embed_dim)
-        self.embed_positions = PositionalEmbedding(
-            args.max_source_positions, embed_dim, self.padding_idx,
-            left_pad=left_pad,
-            learned=args.encoder_learned_pos,
-        ) if not args.no_token_positional_embeddings else None
+        # self.embed_positions = PositionalEmbedding(
+        #     args.max_source_positions, embed_dim, self.padding_idx,
+        #     left_pad=left_pad,
+        #     learned=args.encoder_learned_pos,
+        # ) if not args.no_token_positional_embeddings else None
 
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            TransformerEncoderLayer(args)
+            LocalTransformerEncoderLayer(args)
             for i in range(args.encoder_layers)
         ])
         self.register_buffer('version', torch.Tensor([2]))
@@ -295,7 +294,15 @@ class TransformerEncoder(FairseqEncoder):
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
 
-        self.locality = 10
+        self.kernel_size = 10
+
+        self.embed_positions = PositionalEmbedding(
+            self.kernel_size, embed_dim, self.padding_idx,
+            left_pad=left_pad,
+            learned=args.encoder_learned_pos,
+        ) if not args.no_token_positional_embeddings else None
+
+        self.device = args.device
 
     def forward(self, src_tokens, src_lengths):
         """
@@ -314,14 +321,20 @@ class TransformerEncoder(FairseqEncoder):
         """
 
         batch_size, src_len = src_tokens.size()
-        src_tokens = src_tokens.view(batch_size*self.locality, -1)
 
-        print("Modified size:", src_tokens.size())
+        size_to_add = self.kernel_size - src_len % self.kernel_size
 
+        src_tokens2 = torch.empty(batch_size, src_len+size_to_add, dtype=src_tokens.dtype, device=src_tokens.device)
+        src_tokens2.fill_(self.padding_idx)
+        src_tokens2[:batch_size, -src_len:] = src_tokens
+        src_tokens = src_tokens2.view(-1, self.kernel_size)
+    
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(src_tokens)
+
         if self.embed_positions is not None:
             x += self.embed_positions(src_tokens)
+
         x = F.dropout(x, p=self.dropout, training=self.training)
 
         # B x T x C -> T x B x C
@@ -338,11 +351,12 @@ class TransformerEncoder(FairseqEncoder):
 
         if self.normalize:
             x = self.layer_norm(x)
+        
+        x2 = x.view(-1, batch_size, self.embed_dim)
+        x = x2[-src_len:, :, :]
 
-        src_tokens = src_tokens.view(src_len, batch_size, -1)
-
-        print("Final size", src_tokens.size())
-        print("Encoding done.")
+        encoder_padding_mask2 = encoder_padding_mask.view(batch_size, -1)
+        encoder_padding_mask = encoder_padding_mask2[:, -src_len:]
 
         return {
             'encoder_out': x,  # T x B x C
@@ -390,10 +404,10 @@ class TransformerEncoder(FairseqEncoder):
         return state_dict
 
 
-class TransformerDecoder(FairseqIncrementalDecoder):
+class LocalTransformerDecoder(FairseqIncrementalDecoder):
     """
     Transformer decoder consisting of *args.decoder_layers* layers. Each layer
-    is a :class:`TransformerDecoderLayer`.
+    is a :class:`LocalTransformerDecoderLayer`.
 
     Args:
         args (argparse.Namespace): parsed command-line arguments
@@ -432,7 +446,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
 
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            TransformerDecoderLayer(args, no_encoder_attn)
+            LocalTransformerDecoderLayer(args, no_encoder_attn)
             for _ in range(args.decoder_layers)
         ])
 
@@ -459,6 +473,8 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
 
+        self.kernel_size = 10
+
     def forward(self, prev_output_tokens, encoder_out=None, incremental_state=None):
         """
         Args:
@@ -476,9 +492,27 @@ class TransformerDecoder(FairseqIncrementalDecoder):
                 - the last decoder layer's attention weights of shape `(batch,
                   tgt_len, src_len)`
         """
-        # embed positions
+
+        # batch_size, tgt_len = prev_output_tokens.size()
+
+        # size_to_add = self.kernel_size - tgt_len % self.kernel_size
+
+        # prev_output_tokens2 = torch.empty(batch_size, tgt_len+size_to_add, dtype=prev_output_tokens.dtype, \
+        #      device=prev_output_tokens.device)
+        # prev_output_tokens2.fill_(self.padding_idx)
+        # prev_output_tokens2[:batch_size, :tgt_len] = prev_output_tokens
+        # prev_output_tokens = prev_output_tokens.view(-1, self.kernel_size)
+
         positions = self.embed_positions(
             prev_output_tokens,
+            incremental_state=incremental_state,
+        ) if self.embed_positions is not None else None
+
+        # import pdb
+        # pdb.set_trace()
+
+        positions = self.embed_positions(
+            self.kernel_size,
             incremental_state=incremental_state,
         ) if self.embed_positions is not None else None
 
@@ -576,7 +610,7 @@ class TransformerDecoder(FairseqIncrementalDecoder):
         return state_dict
 
 
-class TransformerEncoderLayer(nn.Module):
+class LocalTransformerEncoderLayer(nn.Module):
     """Encoder layer block.
 
     In the original paper each operation (multi-head attention or FFN) is
@@ -640,7 +674,7 @@ class TransformerEncoderLayer(nn.Module):
             return x
 
 
-class TransformerDecoderLayer(nn.Module):
+class LocalTransformerDecoderLayer(nn.Module):
     """Decoder layer block.
 
     In the original paper each operation (multi-head attention, encoder
@@ -802,7 +836,7 @@ def PositionalEmbedding(num_embeddings, embedding_dim, padding_idx, left_pad, le
     return m
 
 
-@register_model_architecture('transformer_lm', 'transformer_lm')
+@register_model_architecture('localtransformer_lm', 'localtransformer_lm')
 def base_lm_architecture(args):
     args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 512)
     args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 2048)
@@ -829,7 +863,7 @@ def base_lm_architecture(args):
     args.tie_adaptive_proj = getattr(args, 'tie_adaptive_proj', False)
 
 
-@register_model_architecture('transformer_lm', 'transformer_lm_big')
+@register_model_architecture('localtransformer_lm', 'localtransformer_lm_big')
 def transformer_lm_big(args):
     args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 1024)
     args.decoder_ffn_embed_dim = getattr(args, 'decoder_ffn_embed_dim', 4096)
@@ -837,13 +871,13 @@ def transformer_lm_big(args):
     base_lm_architecture(args)
 
 
-@register_model_architecture('transformer_lm', 'transformer_lm_wiki103')
+@register_model_architecture('localtransformer_lm', 'localtransformer_lm_wiki103')
 def transformer_lm_wiki103(args):
     args.dropout = getattr(args, 'dropout', 0.3)
     transformer_lm_big(args)
 
 
-@register_model_architecture('transformer_lm', 'transformer_lm_gbw')
+@register_model_architecture('localtransformer_lm', 'localtransformer_lm_gbw')
 def transformer_lm_gbw(args):
     args.decoder_embed_dim = getattr(args, 'decoder_embed_dim', 512)
     args.dropout = getattr(args, 'dropout', 0.1)
@@ -851,7 +885,7 @@ def transformer_lm_gbw(args):
     transformer_lm_big(args)
 
 
-@register_model_architecture('transformer', 'transformer')
+@register_model_architecture('localtransformer', 'localtransformer')
 def base_architecture(args):
     args.encoder_embed_path = getattr(args, 'encoder_embed_path', None)
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 512)
@@ -880,7 +914,7 @@ def base_architecture(args):
     args.decoder_input_dim = getattr(args, 'decoder_input_dim', args.decoder_embed_dim)
 
 
-@register_model_architecture('transformer', 'transformer_iwslt_de_en')
+@register_model_architecture('localtransformer', 'localtransformer_iwslt_de_en')
 def transformer_iwslt_de_en(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 512)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 1024)
@@ -893,13 +927,13 @@ def transformer_iwslt_de_en(args):
     base_architecture(args)
 
 
-@register_model_architecture('transformer', 'transformer_wmt_en_de')
+@register_model_architecture('localtransformer', 'localtransformer_wmt_en_de')
 def transformer_wmt_en_de(args):
     base_architecture(args)
 
 
 # parameters used in the "Attention Is All You Need" paper (Vaswani, et al, 2017)
-@register_model_architecture('transformer', 'transformer_vaswani_wmt_en_de_big')
+@register_model_architecture('localtransformer', 'localtransformer_vaswani_wmt_en_de_big')
 def transformer_vaswani_wmt_en_de_big(args):
     args.encoder_embed_dim = getattr(args, 'encoder_embed_dim', 1024)
     args.encoder_ffn_embed_dim = getattr(args, 'encoder_ffn_embed_dim', 4096)
@@ -912,20 +946,20 @@ def transformer_vaswani_wmt_en_de_big(args):
     base_architecture(args)
 
 
-@register_model_architecture('transformer', 'transformer_vaswani_wmt_en_fr_big')
+@register_model_architecture('localtransformer', 'localtransformer_vaswani_wmt_en_fr_big')
 def transformer_vaswani_wmt_en_fr_big(args):
     args.dropout = getattr(args, 'dropout', 0.1)
     transformer_vaswani_wmt_en_de_big(args)
 
 
-@register_model_architecture('transformer', 'transformer_wmt_en_de_big')
+@register_model_architecture('localtransformer', 'localtransformer_wmt_en_de_big')
 def transformer_wmt_en_de_big(args):
     args.attention_dropout = getattr(args, 'attention_dropout', 0.1)
     transformer_vaswani_wmt_en_de_big(args)
 
 
 # default parameters used in tensor2tensor implementation
-@register_model_architecture('transformer', 'transformer_wmt_en_de_big_t2t')
+@register_model_architecture('localtransformer', 'localtransformer_wmt_en_de_big_t2t')
 def transformer_wmt_en_de_big_t2t(args):
     args.encoder_normalize_before = getattr(args, 'encoder_normalize_before', True)
     args.decoder_normalize_before = getattr(args, 'decoder_normalize_before', True)

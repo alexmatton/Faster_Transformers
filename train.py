@@ -10,6 +10,7 @@ from fairseq.data import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
 from fairseq.models import lightconv
+from LocalTransformerModel import LocalTransformerModel
 import time
 import datetime
 import tensorboardX
@@ -151,6 +152,9 @@ def main():
         args.weight_softmax = True
         light_conv_small(args)
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'localtransformer':
+        transformer_small(args)
+        model = LocalTransformerModel.build_model(args, summarization_task).to(args.device)
 
     criterion = nn.CrossEntropyLoss(reduction='none')
     if args.optimizer == 'sgd':
@@ -193,7 +197,8 @@ parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv'], default='transformer')
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer'], 
+                default='transformer')
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 
