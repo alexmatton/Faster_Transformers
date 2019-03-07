@@ -192,6 +192,7 @@ parser.add_argument("--n_epochs", type=int, default=30)
 parser.add_argument("--lr", type=float, default=1e-5)
 parser.add_argument('--exponential_decay', type=float, default=0.9)
 parser.add_argument("--optimizer", type=str, choices=['sgd', 'adam'], default='sgd')
+parser.add_argument("--kernel_size", type=int, default=10) #for LocalTransformer
 
 parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0)

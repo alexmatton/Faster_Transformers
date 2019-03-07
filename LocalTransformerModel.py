@@ -294,10 +294,10 @@ class LocalTransformerEncoder(FairseqEncoder):
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
 
-        self.kernel_size = 10
+        self.kernel_size = args.kernel_size
 
         self.embed_positions = PositionalEmbedding(
-            self.kernel_size, embed_dim, self.padding_idx,
+            self.kernel_size, embed_dim, self.padding_idx, #normally max_source_positions instead of kernel_size
             left_pad=left_pad,
             learned=args.encoder_learned_pos,
         ) if not args.no_token_positional_embeddings else None
@@ -320,6 +320,8 @@ class LocalTransformerEncoder(FairseqEncoder):
                   padding elements of shape `(batch, src_len)`
         """
 
+        ############################## ADDED PART ###################################################
+
         batch_size, src_len = src_tokens.size()
 
         size_to_add = self.kernel_size - src_len % self.kernel_size
@@ -328,6 +330,8 @@ class LocalTransformerEncoder(FairseqEncoder):
         src_tokens2.fill_(self.padding_idx)
         src_tokens2[:batch_size, -src_len:] = src_tokens
         src_tokens = src_tokens2.view(-1, self.kernel_size)
+
+        ############################## END ADDED PART ###################################################
     
         # embed tokens and positions
         x = self.embed_scale * self.embed_tokens(src_tokens)
@@ -351,12 +355,16 @@ class LocalTransformerEncoder(FairseqEncoder):
 
         if self.normalize:
             x = self.layer_norm(x)
+
+        ############################## ADDED PART ###################################################
         
         x2 = x.view(-1, batch_size, self.embed_dim)
         x = x2[-src_len:, :, :]
 
         encoder_padding_mask2 = encoder_padding_mask.view(batch_size, -1)
         encoder_padding_mask = encoder_padding_mask2[:, -src_len:]
+
+        ############################## END ADDED PART ###################################################
 
         return {
             'encoder_out': x,  # T x B x C
@@ -440,10 +448,8 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
 
         self.project_in_dim = Linear(input_embed_dim, embed_dim, bias=False) if embed_dim != input_embed_dim else None
 
-        self.kernel_size = 10
-
         self.embed_positions = PositionalEmbedding(
-            self.kernel_size, embed_dim, padding_idx,
+            self.max_target_positions, embed_dim, padding_idx,
             left_pad=left_pad,
             learned=args.decoder_learned_pos,
         ) if not args.no_token_positional_embeddings else None
@@ -707,7 +713,7 @@ class LocalTransformerDecoderLayer(nn.Module):
 
         self.onnx_trace = False
 
-        self.kernel_size = 10
+        self.kernel_size = args.kernel_size
         self.padding_idx = 1
         
 
@@ -727,6 +733,7 @@ class LocalTransformerDecoderLayer(nn.Module):
             encoded output of shape `(batch, src_len, embed_dim)`
         """
 
+        ############################# ADDED PART ####################################
         #For self attention
         tgt_len, batch_size, embed_dim = x.size()
 
@@ -737,6 +744,7 @@ class LocalTransformerDecoderLayer(nn.Module):
         x2.fill_(self.padding_idx)
         x2[:tgt_len, :batch_size, :] = x
         x = x2.view(-1, self.kernel_size, embed_dim)
+        ############################# END ADDED PART ###################################
 
         residual = x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, before=True)
@@ -747,6 +755,7 @@ class LocalTransformerDecoderLayer(nn.Module):
             saved_state = {"prev_key": prev_key, "prev_value": prev_value}
             self.self_attn._set_input_buffer(incremental_state, saved_state)
 
+        ############################# MODIFIED PART ####################################
         x, _ = self.self_attn(
             query=x,
             key=x,
@@ -756,12 +765,17 @@ class LocalTransformerDecoderLayer(nn.Module):
             need_weights=False,
             attn_mask=self.buffered_future_mask(x) if incremental_state is None else None,
         ) #normally attn_mask = self_attn_mask, but I had to rebuild it with the right dimensions
+        ############################# END MODIFIED PART ####################################
+
+
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
 
+        ############################# ADDED PART ####################################
         x2 = x.view(-1, batch_size, self.embed_dim)
         x = x2[:tgt_len, :, :]
+        ############################# END ADDED PART ####################################
 
         attn = None
         if self.encoder_attn is not None:
