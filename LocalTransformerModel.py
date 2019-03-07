@@ -431,6 +431,8 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
         output_embed_dim = args.decoder_output_dim
 
         padding_idx = embed_tokens.padding_idx
+
+        self.padding_idx = padding_idx
         self.max_target_positions = args.max_target_positions
 
         self.embed_tokens = embed_tokens
@@ -438,8 +440,10 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
 
         self.project_in_dim = Linear(input_embed_dim, embed_dim, bias=False) if embed_dim != input_embed_dim else None
 
+        self.kernel_size = 10
+
         self.embed_positions = PositionalEmbedding(
-            args.max_target_positions, embed_dim, padding_idx,
+            self.kernel_size, embed_dim, padding_idx,
             left_pad=left_pad,
             learned=args.decoder_learned_pos,
         ) if not args.no_token_positional_embeddings else None
@@ -472,8 +476,7 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
         self.normalize = args.decoder_normalize_before and final_norm
         if self.normalize:
             self.layer_norm = LayerNorm(embed_dim)
-
-        self.kernel_size = 10
+        
 
     def forward(self, prev_output_tokens, encoder_out=None, incremental_state=None):
         """
@@ -493,26 +496,8 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
                   tgt_len, src_len)`
         """
 
-        # batch_size, tgt_len = prev_output_tokens.size()
-
-        # size_to_add = self.kernel_size - tgt_len % self.kernel_size
-
-        # prev_output_tokens2 = torch.empty(batch_size, tgt_len+size_to_add, dtype=prev_output_tokens.dtype, \
-        #      device=prev_output_tokens.device)
-        # prev_output_tokens2.fill_(self.padding_idx)
-        # prev_output_tokens2[:batch_size, :tgt_len] = prev_output_tokens
-        # prev_output_tokens = prev_output_tokens.view(-1, self.kernel_size)
-
         positions = self.embed_positions(
             prev_output_tokens,
-            incremental_state=incremental_state,
-        ) if self.embed_positions is not None else None
-
-        # import pdb
-        # pdb.set_trace()
-
-        positions = self.embed_positions(
-            self.kernel_size,
             incremental_state=incremental_state,
         ) if self.embed_positions is not None else None
 
@@ -562,7 +547,7 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
             if self.share_input_output_embed:
                 x = F.linear(x, self.embed_tokens.weight)
             else:
-                x = F.linear(x, self.embed_out)
+                x = F.linear(x, self.embed_out)  
 
         return x, {'attn': attn, 'inner_states': inner_states}
 
@@ -722,6 +707,10 @@ class LocalTransformerDecoderLayer(nn.Module):
 
         self.onnx_trace = False
 
+        self.kernel_size = 10
+        self.padding_idx = 1
+        
+
     def prepare_for_onnx_export_(self):
         self.onnx_trace = True
 
@@ -737,6 +726,18 @@ class LocalTransformerDecoderLayer(nn.Module):
         Returns:
             encoded output of shape `(batch, src_len, embed_dim)`
         """
+
+        #For self attention
+        tgt_len, batch_size, embed_dim = x.size()
+
+        size_to_add = self.kernel_size - tgt_len % self.kernel_size
+
+        x2 = torch.empty(tgt_len+size_to_add, batch_size, embed_dim, dtype=x.dtype, \
+             device=x.device)
+        x2.fill_(self.padding_idx)
+        x2[:tgt_len, :batch_size, :] = x
+        x = x2.view(-1, self.kernel_size, embed_dim)
+
         residual = x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, before=True)
         if prev_self_attn_state is not None:
@@ -745,6 +746,7 @@ class LocalTransformerDecoderLayer(nn.Module):
             prev_key, prev_value = prev_self_attn_state
             saved_state = {"prev_key": prev_key, "prev_value": prev_value}
             self.self_attn._set_input_buffer(incremental_state, saved_state)
+
         x, _ = self.self_attn(
             query=x,
             key=x,
@@ -752,11 +754,14 @@ class LocalTransformerDecoderLayer(nn.Module):
             key_padding_mask=self_attn_padding_mask,
             incremental_state=incremental_state,
             need_weights=False,
-            attn_mask=self_attn_mask,
-        )
+            attn_mask=self.buffered_future_mask(x) if incremental_state is None else None,
+        ) #normally attn_mask = self_attn_mask, but I had to rebuild it with the right dimensions
         x = F.dropout(x, p=self.dropout, training=self.training)
         x = residual + x
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
+
+        x2 = x.view(-1, batch_size, self.embed_dim)
+        x = x2[:tgt_len, :, :]
 
         attn = None
         if self.encoder_attn is not None:
@@ -768,6 +773,7 @@ class LocalTransformerDecoderLayer(nn.Module):
                 prev_key, prev_value = prev_attn_state
                 saved_state = {"prev_key": prev_key, "prev_value": prev_value}
                 self.encoder_attn._set_input_buffer(incremental_state, saved_state)
+
             x, attn = self.encoder_attn(
                 query=x,
                 key=encoder_out,
@@ -780,7 +786,7 @@ class LocalTransformerDecoderLayer(nn.Module):
             x = F.dropout(x, p=self.dropout, training=self.training)
             x = residual + x
             x = self.maybe_layer_norm(self.encoder_attn_layer_norm, x, after=True)
-
+        
         residual = x
         x = self.maybe_layer_norm(self.final_layer_norm, x, before=True)
         x = F.relu(self.fc1(x))
@@ -804,6 +810,15 @@ class LocalTransformerDecoderLayer(nn.Module):
 
     def make_generation_fast_(self, need_attn=False, **kwargs):
         self.need_attn = need_attn
+
+    #Normally not here, only in LocalTransformerDecoder
+    def buffered_future_mask(self, tensor):
+        dim = tensor.size(0)
+        if not hasattr(self, '_future_mask') or self._future_mask is None or self._future_mask.device != tensor.device:
+            self._future_mask = torch.triu(utils.fill_with_neg_inf(tensor.new(dim, dim)), 1)
+        if self._future_mask.size(0) < dim:
+            self._future_mask = torch.triu(utils.fill_with_neg_inf(self._future_mask.resize_(dim, dim)), 1)
+        return self._future_mask[:dim, :dim]
 
 
 def Embedding(num_embeddings, embedding_dim, padding_idx):
