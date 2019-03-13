@@ -6,7 +6,7 @@ import argparse
 from data import SummaryDataset, SummarizationTask, collate
 from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, RandomSampler
-from fairseq.data import Dictionary
+from dictionary import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
 from fairseq.models import lightconv
@@ -48,7 +48,7 @@ def validate(dataloader, model, criterion, device, pad_index, epoch):
 
 def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_index, save_dir, n_epochs,
           log_interval=100,
-          save=True, debug = False):
+          save=True, debug=False, dictionary=None):
     best_val_loss = np.inf
 
     for epoch in range(n_epochs):
@@ -79,12 +79,19 @@ def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_in
             output = model(src_tokens, src_lengths, prev_output_tokens)
             preds = torch.argmax(output[0], dim=-1)
             total_correct += ((preds == target).float() * target_mask).sum().item()
+            # TODO change back
+            loss = criterion(output[0].view(-1, output[0].size(-1)), target.view(-1))
+            # loss = criterion(output[0].view(-1, output[0].size(-1)), target.view(-1)).sum()
+            # loss = (criterion(output[0].view(-1, output[0].size(-1)), target.view(-1)) * target_mask.view(-1)).sum()
 
-            loss = (criterion(output[0].view(-1, output[0].size(-1)), target.view(-1)) * target_mask.view(-1)).sum()
-            total_loss += loss.item()
-            loss = loss / target_mask.sum()
+            # loss = loss / target_mask.sum()
+            # loss = loss / target_mask.numel()
+
             loss.backward()
             optimizer.step()
+
+            total_loss += loss.item() * target_mask.numel()
+            # TODO change back
 
             if (batch_idx % log_interval == 0) and (batch_idx > 0):
                 loss_to_log = (total_loss - last_logged_loss) / (total_tokens - last_logged_tokens)
@@ -117,12 +124,16 @@ def main():
     torch.random.manual_seed(args.seed)
 
     dictionary = Dictionary.load(args.vocab_path)
+    dictionary.truncate(args.max_vocab_size)
+
     train_dataset = SummaryDataset(os.path.join(args.data_path, 'train'), dictionary=dictionary,
-                                   max_article_size=args.max_source_positions,
-                                   max_summary_size=args.max_target_positions, max_elements=20 if args.debug else None)
+                                   max_article_size=args.max_source_positions - 2,
+                                   max_summary_size=args.max_target_positions - 2,
+                                   max_elements=20 if args.debug else None)
     val_dataset = SummaryDataset(os.path.join(args.data_path, 'val'), dictionary=dictionary,
-                                 max_article_size=args.max_source_positions,
-                                 max_summary_size=args.max_target_positions, max_elements=20 if args.debug else None)
+                                 max_article_size=args.max_source_positions - 2,
+                                 max_summary_size=args.max_target_positions - 2,
+                                 max_elements=20 if args.debug else None)
 
     # TODO maybe change the sampler to group texts of similar lengths
 
@@ -140,7 +151,9 @@ def main():
 
     summarization_task = SummarizationTask(args, dictionary)
     if args.model == 'transformer':
-        transformer_small(args)
+        # transformer_small(args)
+        # TODO remove this
+        transformer.base_architecture(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'lstm':
         lstm.base_architecture(args)
@@ -156,7 +169,7 @@ def main():
         transformer_small(args)
         model = LocalTransformerModel.build_model(args, summarization_task).to(args.device)
 
-    criterion = nn.CrossEntropyLoss(reduction='none')
+    criterion = nn.CrossEntropyLoss(reduction='mean')
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(params=model.parameters(), lr=args.lr, momentum=args.momentum,
                                     weight_decay=args.weight_decay)
@@ -171,20 +184,21 @@ def main():
 
     print("Launching training with: \noptimizer: {}\n lr: {}\n \
 exponential_decay: {}\n momentum: {}\n weight_decay: {}\n batch_size: {}\n"
-            .format(args.optimizer, args.lr, args.exponential_decay, 
-            args.momentum, args.weight_decay, args.batch_size))
+          .format(args.optimizer, args.lr, args.exponential_decay,
+                  args.momentum, args.weight_decay, args.batch_size))
 
     train(dataloaders, model, criterion, optimizer, lr_scheduler, args.device, dictionary.pad_index,
-          save_dir=os.path.join(args.save_dir, args.flag), n_epochs=args.n_epochs, save=args.save, debug = args.debug)
+          save_dir=os.path.join(args.save_dir, args.flag), n_epochs=args.n_epochs, save=args.save, debug=args.debug,
+          dictionary=dictionary)
 
 
 parser = argparse.ArgumentParser()
 
-parser.add_argument("--data_path", type=str, default="datasets/cnn_full")
+parser.add_argument("--data_path", type=str, default="datasets/cnn_debug")
 parser.add_argument("--vocab_path", type=str, default="datasets/vocab")
 parser.add_argument("--save_dir", type=str, default="checkpoints")
 parser.add_argument("--save", type=int, default=0)
-parser.add_argument("--flag", type=str, default="") #for name of saved model, if "" then takes into account the date
+parser.add_argument("--flag", type=str, default="")  # for name of saved model, if "" then takes into account the date
 parser.add_argument("--debug", type=int, default=0)
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=16)
@@ -192,16 +206,17 @@ parser.add_argument("--n_epochs", type=int, default=30)
 parser.add_argument("--lr", type=float, default=1e-5)
 parser.add_argument('--exponential_decay', type=float, default=0.9)
 parser.add_argument("--optimizer", type=str, choices=['sgd', 'adam'], default='sgd')
-parser.add_argument("--kernel_size", type=int, default=10) #for LocalTransformer
+parser.add_argument("--kernel_size", type=int, default=10)  # for LocalTransformer
 
 parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer'], 
-                default='transformer')
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer'],
+                    default='transformer')
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
+parser.add_argument("--max_vocab_size", type=int, default=20000)
 
 parser.add_argument("--seed", type=int, default=1111)
 
