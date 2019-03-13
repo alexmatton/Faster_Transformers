@@ -764,7 +764,17 @@ class LocalTransformerDecoderLayer(nn.Module):
             incremental_state=incremental_state,
             need_weights=False,
             attn_mask=self.buffered_future_mask(x) if incremental_state is None else None,
-        ) #normally attn_mask = self_attn_mask, but I had to rebuild it with the right dimensions
+        )
+
+        # x, _ = self.self_attn(
+        #     query=x,
+        #     key=x,
+        #     value=x,
+        #     key_padding_mask=self_attn_padding_mask,
+        #     incremental_state=incremental_state,
+        #     need_weights=False,
+        #     attn_mask=self_attn_mask
+        # )
         ############################# END MODIFIED PART ####################################
 
 

@@ -75,7 +75,6 @@ def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_in
             target = batch['target'].to(device)
             target_mask = (target != pad_index).float()
             total_tokens += batch['ntokens']
-
             output = model(src_tokens, src_lengths, prev_output_tokens)
             preds = torch.argmax(output[0], dim=-1)
             total_correct += ((preds == target).float() * target_mask).sum().item()
@@ -192,7 +191,7 @@ parser.add_argument("--n_epochs", type=int, default=30)
 parser.add_argument("--lr", type=float, default=1e-5)
 parser.add_argument('--exponential_decay', type=float, default=0.9)
 parser.add_argument("--optimizer", type=str, choices=['sgd', 'adam'], default='sgd')
-parser.add_argument("--kernel_size", type=int, default=10) #for LocalTransformer
+parser.add_argument("--kernel_size", type=int, default=10) 
 
 parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0)
