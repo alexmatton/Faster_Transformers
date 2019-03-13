@@ -110,6 +110,10 @@ parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 parser.add_argument("--beam_size", type=int, default=4)
 parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv'], default='transformer')
+
+#for local transformer only, choose whether local attention should be used in the decoder self-attention layer
+parser.add_argument("--use_local_decoder", action='store_true')
+
 parser.add_argument("--seed", type=int, default=1111)
 
 

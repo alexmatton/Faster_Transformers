@@ -199,6 +199,10 @@ parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
 parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer'], 
                 default='transformer')
+
+#for local transformer only, choose whether local attention should be used in the decoder self-attention layer
+parser.add_argument("--use_local_decoder", action='store_true')  
+
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 
