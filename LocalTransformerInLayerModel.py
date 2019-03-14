@@ -281,7 +281,7 @@ class LocalTransformerInLayerEncoder(FairseqEncoder):
 
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            LocalTransformerInLayerEncoderLayer(args)
+            LocalTransformerInLayerEncoderLayer(args, i)
             for i in range(args.encoder_layers)
         ])
         self.register_buffer('version', torch.Tensor([2]))
@@ -426,8 +426,8 @@ class LocalTransformerInLayerDecoder(FairseqIncrementalDecoder):
 
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            LocalTransformerInLayerDecoderLayer(args, no_encoder_attn)
-            for _ in range(args.decoder_layers)
+            LocalTransformerInLayerDecoderLayer(args, no_encoder_attn, num_layer=num_layer)
+            for num_layer in range(args.decoder_layers)
         ])
 
         self.adaptive_softmax = None
@@ -586,7 +586,7 @@ class LocalTransformerInLayerEncoderLayer(nn.Module):
         args (argparse.Namespace): parsed command-line arguments
     """
 
-    def __init__(self, args):
+    def __init__(self, args, num_layer = 0):
         super().__init__()
         self.embed_dim = args.encoder_embed_dim
         self.self_attn = MultiheadAttention(
@@ -601,6 +601,9 @@ class LocalTransformerInLayerEncoderLayer(nn.Module):
         self.layer_norms = nn.ModuleList([LayerNorm(self.embed_dim) for i in range(2)])
 
         self.kernel_size = args.kernel_size
+
+        if type(self.kernel_size) == list:
+            self.kernel_size = self.kernel_size[num_layer]
 
     def forward(self, x, encoder_padding_mask):
         """
@@ -687,7 +690,7 @@ class LocalTransformerInLayerDecoderLayer(nn.Module):
             (default: False).
     """
 
-    def __init__(self, args, no_encoder_attn=False):
+    def __init__(self, args, no_encoder_attn=False, num_layer = 0):
         super().__init__()
         self.embed_dim = args.decoder_embed_dim
         self.self_attn = MultiheadAttention(
@@ -722,6 +725,9 @@ class LocalTransformerInLayerDecoderLayer(nn.Module):
         self.padding_idx = 1
 
         self.use_local_decoder = args.use_local_decoder
+
+        if type(self.kernel_size) == list:
+            self.kernel_size = self.kernel_size[num_layer]
         
 
     def prepare_for_onnx_export_(self):
@@ -759,7 +765,7 @@ class LocalTransformerInLayerDecoderLayer(nn.Module):
             self_attn_padding_mask2.fill_(1)
             self_attn_padding_mask2[:, :tgt_len] = self_attn_padding_mask
             self_attn_padding_mask = self_attn_padding_mask2.view(-1, self.kernel_size)
-            
+
         ############################# END ADDED PART ###################################
 
         residual = x

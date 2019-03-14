@@ -12,6 +12,9 @@ from fairseq.data import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
 from fairseq.models import lightconv
+from LocalTransformerModel import LocalTransformerModel
+from LocalTransformerInLayerModel import LocalTransformerInLayerModel
+
 import compute_rouge
 
 from fairseq.sequence_generator import SequenceGenerator
@@ -49,6 +52,9 @@ def main():
         args.weight_softmax = True
         light_conv_small(args)
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'localtransformer':
+        transformer_small(args)
+        model = LocalTransformerModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'localtransformerinlayer':
         transformer_small(args)
         model = LocalTransformerInLayerModel.build_model(args, summarization_task).to(args.device)
@@ -108,7 +114,7 @@ parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--batch_size", type=int, default=32)
 parser.add_argument("--verbose", action='store_true')
 parser.add_argument("--device", type=str, default='cuda')
-parser.add_argument("--kernel_size", type=int, default=10) #for LocalTransformer
+parser.add_argument("--kernel_size", type=int, default=5) #for LocalTransformer
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 parser.add_argument("--beam_size", type=int, default=4)

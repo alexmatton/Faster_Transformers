@@ -11,7 +11,7 @@ from fairseq.models import transformer
 from fairseq.models import lstm
 from fairseq.models import lightconv
 from LocalTransformerModel import LocalTransformerModel
-from LocalTransformerModelInLayer import LocalTransformerInLayerModel
+from LocalTransformerInLayerModel import LocalTransformerInLayerModel
 import time
 import datetime
 import tensorboardX

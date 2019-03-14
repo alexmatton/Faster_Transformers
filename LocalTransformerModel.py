@@ -456,8 +456,8 @@ class LocalTransformerDecoder(FairseqIncrementalDecoder):
 
         self.layers = nn.ModuleList([])
         self.layers.extend([
-            LocalTransformerDecoderLayer(args, no_encoder_attn)
-            for _ in range(args.decoder_layers)
+            LocalTransformerDecoderLayer(args, no_encoder_attn, num_layer=num_layer)
+            for num_layer in range(args.decoder_layers)
         ])
 
         self.adaptive_softmax = None
@@ -683,7 +683,7 @@ class LocalTransformerDecoderLayer(nn.Module):
             (default: False).
     """
 
-    def __init__(self, args, no_encoder_attn=False):
+    def __init__(self, args, no_encoder_attn=False, num_layer=0):
         super().__init__()
         self.embed_dim = args.decoder_embed_dim
         self.self_attn = MultiheadAttention(
@@ -718,6 +718,9 @@ class LocalTransformerDecoderLayer(nn.Module):
         self.padding_idx = 1
 
         self.use_local_decoder = args.use_local_decoder
+
+        if type(self.kernel_size) == list:
+            self.kernel_size = self.kernel_size[num_layer]
         
 
     def prepare_for_onnx_export_(self):
