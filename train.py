@@ -75,7 +75,6 @@ def train(dataloaders, model, criterion, optimizer, lr_scheduler, device, pad_in
             target = batch['target'].to(device)
             target_mask = (target != pad_index).float()
             total_tokens += batch['ntokens']
-
             output = model(src_tokens, src_lengths, prev_output_tokens)
             preds = torch.argmax(output[0], dim=-1)
             total_correct += ((preds == target).float() * target_mask).sum().item()
@@ -212,8 +211,12 @@ parser.add_argument("--momentum", type=float, default=0.9)
 parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer'],
-                    default='transformer')
+
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer'], 
+                default='transformer')
+
+#for local transformer only, choose whether local attention should be used in the decoder self-attention layer
+parser.add_argument("--use_local_decoder", action='store_true')
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 parser.add_argument("--max_vocab_size", type=int, default=20000)

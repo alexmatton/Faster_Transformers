@@ -1,13 +1,13 @@
 import rouge  # pip install py-rouge
 from collections import defaultdict
-
+from tqdm import tqdm
 
 def compute_score(hypotheses, references):
     ''' Compute the average F1 rouge scores taking into account all elements in dataset.
 
     Args:
-        - hypotheses : list of list of tokens for each hypotheses
-        - references : list of list of tokens for each reference
+        - hypotheses : list of strings for each hypothesis
+        - references : list of strings for each reference
     Return:
         - dict with average score for rouge-1, rouge-2, rouge-l, scaled between 0 and 100
 
@@ -26,7 +26,7 @@ def compute_score(hypotheses, references):
 
     avg_f_score = defaultdict(float)
 
-    for hypothesis, reference in zip(hypotheses, references):
+    for hypothesis, reference in tqdm(zip(hypotheses, references)):
         scores = evaluator.get_scores(hypothesis, reference)
 
         # print(scores)

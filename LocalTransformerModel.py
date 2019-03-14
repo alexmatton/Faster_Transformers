@@ -715,6 +715,8 @@ class LocalTransformerDecoderLayer(nn.Module):
 
         self.kernel_size = args.kernel_size
         self.padding_idx = 1
+
+        self.use_local_decoder = args.use_local_decoder
         
 
     def prepare_for_onnx_export_(self):
@@ -735,15 +737,17 @@ class LocalTransformerDecoderLayer(nn.Module):
 
         ############################# ADDED PART ####################################
         #For self attention
-        tgt_len, batch_size, embed_dim = x.size()
 
-        size_to_add = self.kernel_size - tgt_len % self.kernel_size
+        if self.use_local_decoder:
+            tgt_len, batch_size, embed_dim = x.size()
 
-        x2 = torch.empty(tgt_len+size_to_add, batch_size, embed_dim, dtype=x.dtype, \
-             device=x.device)
-        x2.fill_(self.padding_idx)
-        x2[:tgt_len, :batch_size, :] = x
-        x = x2.view(-1, self.kernel_size, embed_dim)
+            size_to_add = self.kernel_size - tgt_len % self.kernel_size
+
+            x2 = torch.empty(tgt_len+size_to_add, batch_size, embed_dim, dtype=x.dtype, \
+                device=x.device)
+            x2.fill_(self.padding_idx)
+            x2[:tgt_len, :batch_size, :] = x
+            x = x2.view(-1, self.kernel_size, embed_dim)
         ############################# END ADDED PART ###################################
 
         residual = x
@@ -756,6 +760,12 @@ class LocalTransformerDecoderLayer(nn.Module):
             self.self_attn._set_input_buffer(incremental_state, saved_state)
 
         ############################# MODIFIED PART ####################################
+
+        current_attn_mask = self_attn_mask
+
+        if self.use_local_decoder:
+            current_attn_mask = self.buffered_future_mask(x) if incremental_state is None else None
+
         x, _ = self.self_attn(
             query=x,
             key=x,
@@ -763,8 +773,9 @@ class LocalTransformerDecoderLayer(nn.Module):
             key_padding_mask=self_attn_padding_mask,
             incremental_state=incremental_state,
             need_weights=False,
-            attn_mask=self.buffered_future_mask(x) if incremental_state is None else None,
-        ) #normally attn_mask = self_attn_mask, but I had to rebuild it with the right dimensions
+            attn_mask=current_attn_mask,
+            )
+        
         ############################# END MODIFIED PART ####################################
 
 
@@ -773,8 +784,9 @@ class LocalTransformerDecoderLayer(nn.Module):
         x = self.maybe_layer_norm(self.self_attn_layer_norm, x, after=True)
 
         ############################# ADDED PART ####################################
-        x2 = x.view(-1, batch_size, self.embed_dim)
-        x = x2[:tgt_len, :, :]
+        if self.use_local_decoder:
+            x2 = x.view(-1, batch_size, self.embed_dim)
+            x = x2[:tgt_len, :, :]
         ############################# END ADDED PART ####################################
 
         attn = None
