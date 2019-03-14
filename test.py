@@ -49,6 +49,9 @@ def main():
         args.weight_softmax = True
         light_conv_small(args)
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'localtransformerinlayer':
+        transformer_small(args)
+        model = LocalTransformerInLayerModel.build_model(args, summarization_task).to(args.device)
 
     if args.model_path:
         model.load_state_dict(torch.load(args.model_path))
@@ -109,8 +112,8 @@ parser.add_argument("--kernel_size", type=int, default=10) #for LocalTransformer
 parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 parser.add_argument("--beam_size", type=int, default=4)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv'], default='transformer')
-
+parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer', 'localtransformerinlayer'], 
+                default='transformer')
 #for local transformer only, choose whether local attention should be used in the decoder self-attention layer
 parser.add_argument("--use_local_decoder", action='store_true')
 

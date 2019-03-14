@@ -1,11 +1,16 @@
 import compute_rouge
 from collections import defaultdict
+import sys
+
+if len(sys.argv)<2:
+    raise Exception("Need to give the name of the output file as argument") 
+filename = sys.argv[1]
 
 texts = []
 summaries = []
 hypotheses = []
 
-with open("datasets/test_output.txt") as f:
+with open(filename) as f:
     for line in f:
         if line.startswith("S"):
             texts.append(line)
