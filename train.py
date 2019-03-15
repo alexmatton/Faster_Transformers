@@ -149,9 +149,9 @@ def main():
 
     summarization_task = SummarizationTask(args, dictionary)
     if args.model == 'transformer':
-        # transformer_small(args)
-        # TODO remove this
-        transformer.base_architecture(args)
+        args.local_transformer = False
+        # transformer.base_architecture(args)
+        transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'lstm':
         lstm.base_architecture(args)
@@ -165,6 +165,7 @@ def main():
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'localtransformer':
         args.local_transformer = True
+        # transformer.base_architecture(args)
         transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
 
