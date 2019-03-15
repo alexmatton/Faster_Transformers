@@ -5,7 +5,6 @@ import os
 import argparse
 from collections import defaultdict
 from data import SummaryDataset, SummarizationTask, collate
-from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, SequentialSampler
 
 from dictionary import Dictionary
@@ -40,7 +39,7 @@ def main():
     if args.model == 'transformer':
         args.local_transformer = False
         # transformer.base_architecture(args)
-        transformer_small(args)
+        transformer.transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'lstm':
         lstm.base_architecture(args)
@@ -50,12 +49,12 @@ def main():
         args.encoder_conv_type = 'lightweight'
         args.decoder_conv_type = 'lightweight'
         args.weight_softmax = True
-        light_conv_small(args)
+        lightconv.lightconv_small(args)
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'localtransformer':
         args.local_transformer = True
         # transformer.base_architecture(args)
-        transformer_small(args)
+        transformer.transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
 
     if args.model_path:
