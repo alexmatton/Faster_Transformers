@@ -10,8 +10,6 @@ from dictionary import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
 from fairseq.models import lightconv
-from LocalTransformerModel import LocalTransformerModel
-from LocalTransformerInLayerModel import LocalTransformerInLayerModel
 import time
 import datetime
 import tensorboardX
@@ -151,9 +149,9 @@ def main():
 
     summarization_task = SummarizationTask(args, dictionary)
     if args.model == 'transformer':
-        # transformer_small(args)
-        # TODO remove this
-        transformer.base_architecture(args)
+        args.local_transformer = False
+        # transformer.base_architecture(args)
+        transformer.transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'lstm':
         lstm.base_architecture(args)
@@ -163,14 +161,13 @@ def main():
         args.encoder_conv_type = 'lightweight'
         args.decoder_conv_type = 'lightweight'
         args.weight_softmax = True
-        light_conv_small(args)
+        lightconv.lightconv_small(args)
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'localtransformer':
-        transformer_small(args)
-        model = LocalTransformerModel.build_model(args, summarization_task).to(args.device)
-    elif args.model == 'localtransformerinlayer':
-        transformer_small(args)
-        model = LocalTransformerInLayerModel.build_model(args, summarization_task).to(args.device)
+        args.local_transformer = True
+        # transformer.base_architecture(args)
+        transformer.transformer_small(args)
+        model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
 
     criterion = nn.CrossEntropyLoss(reduction='mean')
     if args.optimizer == 'sgd':

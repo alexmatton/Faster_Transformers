@@ -94,6 +94,9 @@ class LocalTransformerModel(FairseqModel):
                                  'Must be used with adaptive_loss criterion'),
         parser.add_argument('--adaptive-softmax-dropout', type=float, metavar='D',
                             help='sets adaptive softmax dropout for the tail projections')
+        parser.add_argument('--kernel_size', type=int, help='size of kernel')
+        parser.add_argument('--use_local_decoder', default=False, action='store_true')
+
         # fmt: on
 
     @classmethod
@@ -301,8 +304,6 @@ class LocalTransformerEncoder(FairseqEncoder):
             left_pad=left_pad,
             learned=args.encoder_learned_pos,
         ) if not args.no_token_positional_embeddings else None
-
-        self.device = args.device
 
     def forward(self, src_tokens, src_lengths):
         """

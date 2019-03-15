@@ -5,15 +5,12 @@ import os
 import argparse
 from collections import defaultdict
 from data import SummaryDataset, SummarizationTask, collate
-from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, SequentialSampler
 
-from fairseq.data import Dictionary, TruncatedDictionary
+from dictionary import Dictionary
 from fairseq.models import transformer
 from fairseq.models import lstm
 from fairseq.models import lightconv
-from LocalTransformerModel import LocalTransformerModel
-from LocalTransformerInLayerModel import LocalTransformerInLayerModel
 
 import compute_rouge
 
@@ -25,7 +22,8 @@ def main():
     np.random.seed(args.seed)
     torch.random.manual_seed(args.seed)
 
-    dictionary = TruncatedDictionary(Dictionary.load(args.vocab_path), args.max_vocab_size)
+    dictionary = Dictionary.load(args.vocab_path)
+    dictionary.truncate(args.max_vocab_size)
 
     test_dataset = SummaryDataset(os.path.join(args.data_path, 'test'), dictionary=dictionary,
                                   max_article_size=args.max_source_positions,
@@ -39,7 +37,9 @@ def main():
 
     summarization_task = SummarizationTask(args, dictionary)
     if args.model == 'transformer':
-        transformer_small(args)
+        args.local_transformer = False
+        # transformer.base_architecture(args)
+        transformer.transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'lstm':
         lstm.base_architecture(args)
@@ -49,20 +49,19 @@ def main():
         args.encoder_conv_type = 'lightweight'
         args.decoder_conv_type = 'lightweight'
         args.weight_softmax = True
-        light_conv_small(args)
+        lightconv.lightconv_small(args)
         model = lightconv.LightConvModel.build_model(args, summarization_task).to(args.device)
     elif args.model == 'localtransformer':
-        transformer_small(args)
-        model = LocalTransformerModel.build_model(args, summarization_task).to(args.device)
-    elif args.model == 'localtransformerinlayer':
-        transformer_small(args)
-        model = LocalTransformerInLayerModel.build_model(args, summarization_task).to(args.device)
+        args.local_transformer = True
+        # transformer.base_architecture(args)
+        transformer.transformer_small(args)
+        model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
 
     if args.model_path:
         model.load_state_dict(torch.load(args.model_path))
 
-    generator = SequenceGenerator([model], dictionary, beam_size=args.beam_size,
-                                  maxlen=args.max_target_positions)
+    generator = SequenceGenerator(dictionary, beam_size=args.beam_size,
+                                  max_len_b=args.max_target_positions)
 
     avg_rouge_score = defaultdict(float)
 
@@ -74,10 +73,8 @@ def main():
         references = [remove_special_tokens(ref, dictionary) for ref in references]
         references = [dictionary.string(ref) for ref in references]
 
-        encoder_input = {'src_tokens': src_tokens, 'src_lengths': src_lengths}
-        print("generation")
-        hypos = generator.generate(encoder_input)
-        print("Done")
+        # encoder_input = {'src_tokens': src_tokens, 'src_lengths': src_lengths}
+        hypos = generator.generate([model], {'net_input':{'src_tokens':src_tokens, 'src_lengths':src_lengths}})
 
         hypotheses = [hypo[0]['tokens'] for hypo in hypos]
         assert len(hypotheses) == src_tokens.size()[0]  # = size of the batch
