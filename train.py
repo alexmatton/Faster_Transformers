@@ -218,7 +218,7 @@ parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
 parser.add_argument("--model",type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer', 
-                        'localtransformerinlayer', 'transformer_conv'],default='transformer')
+                        'transformer_conv'],default='transformer')
 
 
 #for local transformer only, choose whether local attention should be used in the decoder self-attention layer
