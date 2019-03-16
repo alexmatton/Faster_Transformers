@@ -59,7 +59,6 @@ def collate(
         batch['net_input']['prev_output_tokens'] = prev_output_tokens
     return batch
 
-
 class SummaryDataset(Dataset):
     '''
     '''
@@ -124,6 +123,7 @@ class SummaryDataset(Dataset):
         return torch.LongTensor([self.dictionary.index(sym) for sym in text] + [self.dictionary.eos_index])
 
     def ordered_indices(self, shuffle=False):
+        #TODO use it
         """Return an ordered list of indices. Batches will be constructed based
                 on this order."""
         if shuffle:
@@ -143,11 +143,32 @@ class SummaryDataset(Dataset):
     def __len__(self):
         return len(self.articles)
 
+class DummySummaryDataset(Dataset):
+    def __init__(self,n_summaries,article_size,summary_size,dictionary):
+        self.article = ['a' for _ in range(article_size)]
+        self.summary = ['a' for _ in range(summary_size)]
+
+        self.articles = [self.article for _ in range(n_summaries)]
+        self.summaries = [self.summary for _ in range(n_summaries)]
+
+        self.dictionary = dictionary
+
+    def tokenize(self, text):
+        return torch.LongTensor([self.dictionary.index(sym) for sym in text] + [self.dictionary.eos_index])
+
+    def __getitem__(self, index):
+        article, summary = self.articles[index], self.summaries[index]
+        article, summary = self.tokenize(article), self.tokenize(summary)
+        item = {'id': index, 'article': article, 'summary': summary}
+        return item
+
+    def __len__(self):
+        return len(self.articles)
+
 
 ##TODO maybe integrate totally into FairSeq for later use
 
 class SummarizationTask(FairseqTask):
-
     ##TODO finish this and design in in the same way as  https://github.com/pytorch/fairseq/blob/master/fairseq/tasks/language_modeling.py
     def __init__(self, args, dictionary):
         super().__init__(args)
