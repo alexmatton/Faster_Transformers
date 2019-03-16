@@ -14,6 +14,9 @@ def parse_bin(datapath,max_input_tokens,max_output_tokens):
     assert filelist, ('Error: Empty filelist at %s' %
                       datapath)  # check filelist isn't empty
 
+    max_input_tokens = int(max_input_tokens)
+    max_output_tokens = int(max_output_tokens)
+
     for f in filelist:
         reader = open(f, 'rb')
         while True:
@@ -30,8 +33,8 @@ def parse_bin(datapath,max_input_tokens,max_output_tokens):
                 examples.append(
                     '%s' % (tf_example.features.feature[key].bytes_list.value[0]))
 
-            articles.append(examples[1][2:-1])
-            summaries.append(examples[0][2:-1])
+            articles.append(examples[0][2:-1])
+            summaries.append(examples[1][2:-1])
     articles = [clean(art,max_input_tokens) for art in articles]
     summaries = [clean(sum,max_output_tokens) for sum in summaries]
 

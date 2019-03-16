@@ -8,9 +8,8 @@ from data import SummaryDataset, SummarizationTask, collate
 from torch.utils.data import DataLoader, SequentialSampler
 
 from dictionary import Dictionary
-from fairseq.models import transformer
-from fairseq.models import lstm
-from fairseq.models import lightconv
+from fairseq.models import transformer, lightconv, lstm, transformer_conv
+
 
 import compute_rouge
 
@@ -56,6 +55,11 @@ def main():
         # transformer.base_architecture(args)
         transformer.transformer_small(args)
         model = transformer.TransformerModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'transformer_conv':
+        # args.local_transformer = True
+        # transformer.base_architecture(args)
+        transformer_conv.transformer_conv_small(args)
+        model = transformer_conv.TransformerConvModel.build_model(args, summarization_task).to(args.device)
 
     if args.model_path:
         model.load_state_dict(torch.load(args.model_path))
@@ -117,10 +121,13 @@ parser.add_argument("--max_source_positions", type=int, default=400)
 parser.add_argument("--max_target_positions", type=int, default=100)
 parser.add_argument("--max_vocab_size", type=int, default=20000)
 parser.add_argument("--beam_size", type=int, default=4)
-parser.add_argument("--model", type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer', 'localtransformerinlayer'], 
-                default='transformer')
+parser.add_argument("--model",type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer', 
+                        'localtransformerinlayer', 'transformer_conv'],default='transformer')
 #for local transformer only, choose whether local attention should be used in the decoder self-attention layer
 parser.add_argument("--use_local_decoder", action='store_true')
+parser.add_argument("--kernel_size", type=int, default=10)  # for LocalTransformer or transformer_conv
+parser.add_argument("--deconv", action='store_true')  # for LocalTransformer or transformer_conv
+
 
 parser.add_argument("--seed", type=int, default=1111)
 
