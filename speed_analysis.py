@@ -16,8 +16,14 @@ def run_pass(model, dataloader, criterion, optimizer, pad_index, device, forward
     model.train()
     total_sents = 0
     total_time = 0
+    total_time_encoder = 0
+    total_time_decoder = 0
+
     last_logged_sents = 0
     last_log_total_time = 0
+    last_log_total_time_encoder = 0
+    last_log_total_time_decoder = 0
+
     with torch.set_grad_enabled(not forward):
         for batch_idx, batch in enumerate(dataloader):
             src_tokens = batch['net_input']['src_tokens'].to(device)
@@ -30,20 +36,42 @@ def run_pass(model, dataloader, criterion, optimizer, pad_index, device, forward
                 print(src_tokens.shape)
 
             time_before_model = time.process_time()
-            output = model(src_tokens, src_lengths, prev_output_tokens)
+            output_encoder = model.encoder(src_tokens, src_lengths)
+            time_after_encoder = time.process_time()
+            # print("time encod", time_after_encoder-time_before_model)
+
+            output = model.decoder(prev_output_tokens, output_encoder)
+
+            # output = model(src_tokens, src_lengths, prev_output_tokens)
             if not forward:
                 loss = (criterion(output[0].view(-1, output[0].size(-1)), target.view(-1)) * target_mask.view(-1)).sum()
                 loss.backward()
                 optimizer.step()
-            total_time += time.process_time()-time_before_model
+
+            current_time = time.process_time()
+
+            # print("time decod", current_time - time_after_encoder)
+
+            total_time += current_time - time_before_model
+            total_time_encoder += time_after_encoder - time_before_model
+            total_time_decoder += current_time - time_after_encoder
 
             if (batch_idx % log_interval == 0) and (batch_idx > 0):
                 speed_to_log = (total_sents - last_logged_sents) / (total_time - last_log_total_time)
-                last_log_total_time =total_time
+                speed_to_log_encoder = (total_sents - last_logged_sents) / \
+                                        (total_time_encoder - last_log_total_time_encoder)
+                speed_to_log_decoder = (total_sents - last_logged_sents) / \
+                                        (total_time_decoder - last_log_total_time_decoder)
+                last_log_total_time = total_time
+                last_log_total_time_encoder = total_time_encoder
+                last_log_total_time_decoder = total_time_decoder
                 last_logged_sents = total_sents
 
                 print("{} | {:.3f} sent/s".format("forward only" if forward else "forward + backward", speed_to_log))
-    return total_sents, total_time
+                print("{} | {:.3f} sent/s".format("encoder only", speed_to_log_encoder))
+                print("{} | {:.3f} sent/s".format("decoder only", speed_to_log_decoder))
+                print()
+    return total_sents, total_time, total_time_decoder, total_time_decoder
 
 
 def main():
@@ -83,7 +111,9 @@ def main():
     criterion = nn.CrossEntropyLoss(reduction='none')
     optimizer = torch.optim.SGD(params=model.parameters(), lr=1e-5, momentum=0.0,
                                 weight_decay=0.0)
-    speeds = []
+    total_speeds = []
+    encoder_speeds = []
+    decoder_speeds = []
     len_articles = [a for a in range(args.min_len_article, args.max_len_article, args.len_step)]
     for len_article in len_articles:
         dataset = DummySummaryDataset(args.total_sents, len_article, args.len_summaries, dictionary)
@@ -95,14 +125,21 @@ def main():
 
         print("MODEL {} ARTICLE LEN {} SUMMARY LEN {}".format(args.model, len_article, args.len_summaries))
 
-        total_sents, total_time = run_pass(model, dataloader, criterion, optimizer, dictionary.pad_index, args.device,
-                                           args.forward)
+        total_sents, total_time, total_time_encoder, total_time_decoder = \
+            run_pass(model, dataloader, criterion, optimizer, dictionary.pad_index, args.device, args.forward)
         print("MODEL {} SPEED {}".format(args.model, total_sents / total_time))
-        speeds.append(total_sents / total_time)
+        print()
+        total_speeds.append(total_sents / total_time)
+        encoder_speeds.append(total_sents / total_time_encoder)
+        decoder_speeds.append(total_sents / total_time_decoder)
+
     if not os.path.isdir(os.path.join(args.save_dir, args.model)):
         os.makedirs(os.path.join(args.save_dir, args.model))
+    
     np.save(os.path.join(args.save_dir, args.model, 'len_articles.npy'), np.array(len_articles))
-    np.save(os.path.join(args.save_dir, args.model, 'speeds.npy'), np.array(speeds))
+    np.save(os.path.join(args.save_dir, args.model, 'total_speeds.npy'), np.array(total_speeds))
+    np.save(os.path.join(args.save_dir, args.model, 'encoder_speeds.npy'), np.array(encoder_speeds))
+    np.save(os.path.join(args.save_dir, args.model, 'decoder_speeds.npy'), np.array(decoder_speeds))
 
 
 parser = argparse.ArgumentParser()
