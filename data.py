@@ -6,6 +6,8 @@ from tensorflow.core.example import example_pb2
 from fairseq.tasks import FairseqTask
 from fairseq.data import data_utils, Dictionary
 import torch
+import random
+import string
 
 
 def collate(
@@ -145,8 +147,8 @@ class SummaryDataset(Dataset):
 
 class DummySummaryDataset(Dataset):
     def __init__(self,n_summaries,article_size,summary_size,dictionary):
-        self.article = ['a' for _ in range(article_size)]
-        self.summary = ['a' for _ in range(summary_size)]
+        self.article = [random.choice(string.ascii_letters) for _ in range(article_size)]
+        self.summary = [random.choice(string.ascii_letters) for _ in range(summary_size)]
 
         self.articles = [self.article for _ in range(n_summaries)]
         self.summaries = [self.summary for _ in range(n_summaries)]

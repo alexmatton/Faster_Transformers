@@ -12,66 +12,42 @@ from fairseq.models import transformer, lightconv, lstm, transformer_conv
 import time
 
 
-def run_pass(model, dataloader, criterion, optimizer, pad_index, device, forward=True, log_interval=50):
+def run_pass(model, dataloader, pad_index, device, encoder_only = False, log_interval=100):
+
     model.train()
     total_sents = 0
-    total_time = 0
-    total_time_encoder = 0
-    total_time_decoder = 0
-
     last_logged_sents = 0
-    last_log_total_time = 0
-    last_log_total_time_encoder = 0
-    last_log_total_time_decoder = 0
 
-    with torch.set_grad_enabled(not forward):
+    with torch.no_grad():
+
+        last_log_time = time.time()
+        time_start = last_log_time
+
         for batch_idx, batch in enumerate(dataloader):
+            
             src_tokens = batch['net_input']['src_tokens'].to(device)
             src_lengths = batch['net_input']['src_lengths'].to(device)
             prev_output_tokens = batch['net_input']['prev_output_tokens'].to(device)
-            target = batch['target'].to(device)
-            target_mask = (target != pad_index).float()
             total_sents += len(src_lengths)
             if batch_idx == 0:
                 print(src_tokens.shape)
 
-            time_before_model = time.process_time()
-            output_encoder = model.encoder(src_tokens, src_lengths)
-            time_after_encoder = time.process_time()
-            # print("time encod", time_after_encoder-time_before_model)
-
-            output = model.decoder(prev_output_tokens, output_encoder)
-
-            # output = model(src_tokens, src_lengths, prev_output_tokens)
-            if not forward:
-                loss = (criterion(output[0].view(-1, output[0].size(-1)), target.view(-1)) * target_mask.view(-1)).sum()
-                loss.backward()
-                optimizer.step()
-
-            current_time = time.process_time()
-
-            # print("time decod", current_time - time_after_encoder)
-
-            total_time += current_time - time_before_model
-            total_time_encoder += time_after_encoder - time_before_model
-            total_time_decoder += current_time - time_after_encoder
+            if encoder_only:
+                output = model.encoder(src_tokens, src_lengths)
+            else:
+                output = model(src_tokens, src_lengths, prev_output_tokens)
 
             if (batch_idx % log_interval == 0) and (batch_idx > 0):
-                speed_to_log = (total_sents - last_logged_sents) / (total_time - last_log_total_time)
-                speed_to_log_encoder = (total_sents - last_logged_sents) / \
-                                        (total_time_encoder - last_log_total_time_encoder)
-                speed_to_log_decoder = (total_sents - last_logged_sents) / \
-                                        (total_time_decoder - last_log_total_time_decoder)
-                last_log_total_time = total_time
-                last_log_total_time_encoder = total_time_encoder
-                last_log_total_time_decoder = total_time_decoder
+                current_time = time.time()
+                speed_to_log = (total_sents - last_logged_sents) / (current_time - last_log_time)
+                last_log_time = current_time
                 last_logged_sents = total_sents
 
-                print("{} | {:.3f} sent/s".format("forward only" if forward else "forward + backward", speed_to_log))
-                print("{} | {:.3f} sent/s".format("encoder only", speed_to_log_encoder))
-                print("{} | {:.3f} sent/s".format("decoder only", speed_to_log_decoder))
-                print()
-    return total_sents, total_time, total_time_decoder, total_time_decoder
+                print("{} | {:.3f} sent/s or {:.5f} s/sent".format("whole model" if not encoder_only
+                                                                else "decoder only",
+                                                                speed_to_log, 1/speed_to_log))
+                
+    return total_sents, time.time()-time_start
 
 
 def main():
@@ -108,13 +84,8 @@ def main():
         transformer_conv.transformer_conv_small(args)
         model = transformer_conv.TransformerConvModel.build_model(args, summarization_task).to(args.device)
 
-    criterion = nn.CrossEntropyLoss(reduction='none')
-    optimizer = torch.optim.SGD(params=model.parameters(), lr=1e-5, momentum=0.0,
-                                weight_decay=0.0)
     total_speeds = []
-    encoder_speeds = []
-    decoder_speeds = []
-    len_articles = [a for a in range(args.min_len_article, args.max_len_article, args.len_step)]
+    len_articles = [a for a in range(args.min_len_article, args.max_len_article+args.len_step, args.len_step)]
     for len_article in len_articles:
         dataset = DummySummaryDataset(args.total_sents, len_article, args.len_summaries, dictionary)
 
@@ -125,21 +96,19 @@ def main():
 
         print("MODEL {} ARTICLE LEN {} SUMMARY LEN {}".format(args.model, len_article, args.len_summaries))
 
-        total_sents, total_time, total_time_encoder, total_time_decoder = \
-            run_pass(model, dataloader, criterion, optimizer, dictionary.pad_index, args.device, args.forward)
-        print("MODEL {} SPEED {}".format(args.model, total_sents / total_time))
+        total_sents, total_time = \
+            run_pass(model, dataloader, dictionary.pad_index, args.device, args.encoder_only)
+        print("MODEL {} SPEED {} T/SENT {}".format(args.model, total_sents / total_time, total_time / total_sents))
         print()
         total_speeds.append(total_sents / total_time)
-        encoder_speeds.append(total_sents / total_time_encoder)
-        decoder_speeds.append(total_sents / total_time_decoder)
 
     if not os.path.isdir(os.path.join(args.save_dir, args.model)):
         os.makedirs(os.path.join(args.save_dir, args.model))
     
-    np.save(os.path.join(args.save_dir, args.model, 'len_articles.npy'), np.array(len_articles))
-    np.save(os.path.join(args.save_dir, args.model, 'total_speeds.npy'), np.array(total_speeds))
-    np.save(os.path.join(args.save_dir, args.model, 'encoder_speeds.npy'), np.array(encoder_speeds))
-    np.save(os.path.join(args.save_dir, args.model, 'decoder_speeds.npy'), np.array(decoder_speeds))
+    filename = "full_model_" if not args.encoder_only else "encoder_only_"
+    filename += str(args.min_len_article) + "_" + str(args.max_len_article) + "_"
+    filename += 'total_speeds.npy'
+    np.save(os.path.join(args.save_dir, args.model, filename), np.array(list(zip(len_articles, total_speeds))))
 
 
 parser = argparse.ArgumentParser()
@@ -160,6 +129,8 @@ parser.add_argument("--len_step", type=int, default=50)
 parser.add_argument("--len_summaries", type=int, default=100)
 parser.add_argument("--total_sents", type=int, default=2000)
 parser.add_argument("--forward", type=int, default=1)
+
+parser.add_argument("--encoder_only", action='store_true')
 
 if __name__ == "__main__":
     main()
