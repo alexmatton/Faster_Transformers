@@ -7,7 +7,7 @@ from data import SummaryDataset, SummarizationTask, collate
 from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, RandomSampler
 from dictionary import Dictionary
-from fairseq.models import transformer, lightconv, lstm, transformer_conv
+from fairseq.models import transformer, lightconv, lstm, transformer_conv, transformer_mc
 import time
 import datetime
 import tensorboardX
@@ -171,6 +171,11 @@ def main():
         # transformer.base_architecture(args)
         transformer_conv.transformer_conv_small(args)
         model = transformer_conv.TransformerConvModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'transformer_mc':
+        # args.local_transformer = True
+        # transformer.base_architecture(args)
+        transformer_mc.transformer_mc_small(args)
+        model = transformer_mc.TransformerMCModel.build_model(args, summarization_task).to(args.device)
 
     criterion = nn.CrossEntropyLoss(reduction='mean')
     if args.optimizer == 'sgd':
@@ -209,7 +214,7 @@ parser.add_argument("--n_epochs", type=int, default=30)
 parser.add_argument("--lr", type=float, default=1e-5)
 parser.add_argument('--exponential_decay', type=float, default=0.9)
 parser.add_argument("--optimizer", type=str, choices=['sgd', 'adam'], default='sgd')
-parser.add_argument("--kernel_size", type=int, default=10)  # for LocalTransformer or transformer_conv
+parser.add_argument("--kernel_size", type=int, default=4)  # for LocalTransformer or transformer_conv
 parser.add_argument("--deconv", action='store_true')  # for LocalTransformer or transformer_conv
 
 
@@ -218,7 +223,7 @@ parser.add_argument("--weight_decay", type=float, default=0.0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--log_interval", type=str, help='log every k batch', default=100)
 parser.add_argument("--model",type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer', 
-                        'transformer_conv'],default='transformer')
+                        'transformer_conv', 'transformer_mc'],default='transformer')
 
 
 #for local transformer only, choose whether local attention should be used in the decoder self-attention layer

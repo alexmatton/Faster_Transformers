@@ -7,7 +7,7 @@ from data import DummySummaryDataset, SummarizationTask, collate
 from models import transformer_small, light_conv_small
 from torch.utils.data import DataLoader, RandomSampler
 from fairseq.data import Dictionary
-from fairseq.models import transformer, lightconv, lstm, transformer_conv
+from fairseq.models import transformer, lightconv, lstm, transformer_conv, transformer_mc
 
 import time
 
@@ -83,6 +83,11 @@ def main():
         # transformer.base_architecture(args)
         transformer_conv.transformer_conv_small(args)
         model = transformer_conv.TransformerConvModel.build_model(args, summarization_task).to(args.device)
+    elif args.model == 'transformer_mc':
+        # args.local_transformer = True
+        # transformer.base_architecture(args)
+        transformer_mc.transformer_mc_small(args)
+        model = transformer_mc.TransformerMCModel.build_model(args, summarization_task).to(args.device)
 
     total_speeds = []
     len_articles = [a for a in range(args.min_len_article, args.max_len_article+args.len_step, args.len_step)]
@@ -118,9 +123,9 @@ parser.add_argument("--save_dir", type=str, default="checkpoints/speed_analysis"
 parser.add_argument("--num_workers", type=int, default=0)
 parser.add_argument("--device", type=str, default='cuda')
 parser.add_argument("--model",type=str, choices=['transformer', 'lstm', 'lightconv', 'localtransformer', 
-                        'transformer_conv'],default='transformer')
+                        'transformer_conv', 'transformer_mc'],default='transformer')
 parser.add_argument("--batch_size", type=int, default=16)
-parser.add_argument("--kernel_size", type=int, default=10)  # for LocalTransformer or transformer_conv
+parser.add_argument("--kernel_size", type=int, default=4)  # for LocalTransformer or transformer_conv
 parser.add_argument("--deconv", action='store_true')  # for LocalTransformer or transformer_conv
 
 parser.add_argument("--min_len_article", type=int, default=1000)
